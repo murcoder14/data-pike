@@ -1,0 +1,11 @@
+# Flink Data Pipeline - Example Variable Values
+# Copy this file to terraform.tfvars and fill in your values.
+
+environment         = "dev"
+aws_region          = "us-east-1"
+vpc_cidr            = "10.0.0.0/16"
+db_instance_class   = "db.r6g.large"
+kinesis_shard_count = 1
+github_repo         = "your-org/your-repo"
+github_branch       = "main"
+file_key            = "jars/my-app-latest.jar"
