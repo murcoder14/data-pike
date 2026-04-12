@@ -3,8 +3,11 @@ terraform/.terraform/
 terraform/.terraform.lock.hcl
 terraform/*.tfstate
 terraform/*.tfstate.backup
-terraform/*.tfplan
+terraform/tfplan
+terraform/tfplan.*
 terraform/terraform.tfvars
+terraform/terraform.tfvars.*
+!terraform/terraform.tfvars.example
 terraform/modules/storage/lambda/
 
 # Java / Maven
@@ -14,6 +17,7 @@ target/
 *.war
 *.ear
 dependency-reduced-pom.xml
+.jqwik-database
 
 # IDE
 .idea/

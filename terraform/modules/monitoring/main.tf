@@ -9,13 +9,14 @@
 # =============================================================================
 
 resource "aws_cloudwatch_log_group" "flink" {
-  name              = "/aws/kinesis-analytics/flink-data-pipeline-${var.environment}"
-  retention_in_days = 30
+  name              = "/aws/kinesis-analytics/${var.project_name}-${var.environment}"
+  retention_in_days = var.log_retention_days
+  kms_key_id        = var.cloudwatch_log_kms_key_arn
 
   tags = {
-    Name        = "flink-data-pipeline-${var.environment}-flink-logs"
+    Name        = "${var.project_name}-${var.environment}-flink-logs"
     Environment = var.environment
-    Application = "flink-data-pipeline"
+    Application = var.project_name
   }
 }
 
@@ -29,13 +30,14 @@ resource "aws_cloudwatch_log_stream" "flink" {
 # =============================================================================
 
 resource "aws_cloudwatch_log_group" "codebuild_build" {
-  name              = "/aws/codebuild/flink-data-pipeline-${var.environment}-build"
-  retention_in_days = 30
+  name              = "/aws/codebuild/${var.project_name}-${var.environment}-build"
+  retention_in_days = var.log_retention_days
+  kms_key_id        = var.cloudwatch_log_kms_key_arn
 
   tags = {
-    Name        = "flink-data-pipeline-${var.environment}-build-logs"
+    Name        = "${var.project_name}-${var.environment}-build-logs"
     Environment = var.environment
-    Application = "flink-data-pipeline"
+    Application = var.project_name
   }
 }
 
@@ -44,13 +46,14 @@ resource "aws_cloudwatch_log_group" "codebuild_build" {
 # =============================================================================
 
 resource "aws_cloudwatch_log_group" "codebuild_plan" {
-  name              = "/aws/codebuild/flink-data-pipeline-${var.environment}-plan"
-  retention_in_days = 30
+  name              = "/aws/codebuild/${var.project_name}-${var.environment}-plan"
+  retention_in_days = var.log_retention_days
+  kms_key_id        = var.cloudwatch_log_kms_key_arn
 
   tags = {
-    Name        = "flink-data-pipeline-${var.environment}-plan-logs"
+    Name        = "${var.project_name}-${var.environment}-plan-logs"
     Environment = var.environment
-    Application = "flink-data-pipeline"
+    Application = var.project_name
   }
 }
 
@@ -59,12 +62,13 @@ resource "aws_cloudwatch_log_group" "codebuild_plan" {
 # =============================================================================
 
 resource "aws_cloudwatch_log_group" "codebuild_apply" {
-  name              = "/aws/codebuild/flink-data-pipeline-${var.environment}-apply"
-  retention_in_days = 30
+  name              = "/aws/codebuild/${var.project_name}-${var.environment}-apply"
+  retention_in_days = var.log_retention_days
+  kms_key_id        = var.cloudwatch_log_kms_key_arn
 
   tags = {
-    Name        = "flink-data-pipeline-${var.environment}-apply-logs"
+    Name        = "${var.project_name}-${var.environment}-apply-logs"
     Environment = var.environment
-    Application = "flink-data-pipeline"
+    Application = var.project_name
   }
 }

@@ -1,5 +1,11 @@
 # Kinesis Module - Input Variables
 
+variable "project_name" {
+  description = "Project name used as a prefix for all resource names"
+  type        = string
+  nullable    = false
+}
+
 variable "environment" {
   description = "Deployment environment (dev, staging, prod)"
   type        = string
@@ -30,6 +36,12 @@ variable "kms_key_arn" {
 
 variable "input_bucket_id" {
   description = "Name/ID of the S3 Input Bucket (for EventBridge rule pattern)"
+  type        = string
+  nullable    = false
+}
+
+variable "kinesis_stream_name" {
+  description = "Name of the Kinesis Data Stream"
   type        = string
   nullable    = false
 }

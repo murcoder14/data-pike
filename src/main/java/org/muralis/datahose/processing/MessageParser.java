@@ -11,6 +11,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Serial;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Parses JSON payloads from Kinesis messages (EventBridge S3 object-created events)
@@ -47,10 +49,12 @@ public class MessageParser extends RichFlatMapFunction<String, S3Notification> {
 
             if (bucketName == null || bucketName.isEmpty()
                     || objectKey == null || objectKey.isEmpty()) {
-                LOG.error("Missing required fields (bucket name or object key) in message: {}", value);
+                LOG.error("Missing required fields (bucket name or object key) in message: {}", sanitizeForLogs(value));
                 deadLetterCounter.inc();
                 return;
             }
+
+            objectKey = URLDecoder.decode(objectKey, StandardCharsets.UTF_8);
 
             String bucketUrl = "s3://" + bucketName;
             String eventTime = root.path("time").asText(null);
@@ -59,8 +63,12 @@ public class MessageParser extends RichFlatMapFunction<String, S3Notification> {
             S3Notification notification = new S3Notification(bucketUrl, objectKey, eventTime, eventSource);
             out.collect(notification);
         } catch (Exception e) {
-            LOG.error("Failed to parse Kinesis message: {}", value, e);
+            LOG.error("Failed to parse Kinesis message: {}", sanitizeForLogs(value), e);
             deadLetterCounter.inc();
         }
+    }
+
+    static String sanitizeForLogs(String value) {
+        return value == null ? "null" : value.replace("\r", "\\r").replace("\n", "\\n");
     }
 }

@@ -1,7 +1,7 @@
 # Networking Module - VPC, Subnets, Security Groups, VPC Endpoints
 #
 # Provisions a VPC with private subnets across multiple AZs,
-# security groups for Flink and RDS, route tables, and VPC endpoints.
+# security groups for Flink, route tables, and VPC endpoints.
 
 # =============================================================================
 # VPC and Private Subnets
@@ -17,7 +17,89 @@ resource "aws_vpc" "main" {
   enable_dns_hostnames = true
 
   tags = {
-    Name = "flink-pipeline-${var.environment}"
+    Name = "${var.project_name}-${var.environment}"
+  }
+}
+
+# =============================================================================
+# VPC Flow Logs
+# =============================================================================
+
+resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
+  count             = var.enable_vpc_flow_logs ? 1 : 0
+  name              = "/aws/vpc/flowlogs/${var.project_name}-${var.environment}"
+  retention_in_days = var.log_retention_days
+  kms_key_id        = var.cloudwatch_log_kms_key_arn
+
+  tags = {
+    Name        = "${var.project_name}-${var.environment}-vpc-flow-logs"
+    Environment = var.environment
+    Application = var.project_name
+  }
+}
+
+resource "aws_iam_role" "vpc_flow_logs" {
+  count = var.enable_vpc_flow_logs ? 1 : 0
+  name = "${var.project_name}-${var.environment}-vpc-flow-logs"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "vpc-flow-logs.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "${var.project_name}-${var.environment}-vpc-flow-logs"
+    Environment = var.environment
+    Application = var.project_name
+  }
+}
+
+resource "aws_iam_role_policy" "vpc_flow_logs" {
+  count = var.enable_vpc_flow_logs ? 1 : 0
+  name = "${var.project_name}-${var.environment}-vpc-flow-logs"
+  role = aws_iam_role.vpc_flow_logs[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:DescribeLogGroups",
+          "logs:DescribeLogStreams",
+          "logs:PutLogEvents"
+        ]
+        Resource = [
+          aws_cloudwatch_log_group.vpc_flow_logs[0].arn,
+          "${aws_cloudwatch_log_group.vpc_flow_logs[0].arn}:*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_flow_log" "vpc" {
+  count                = var.enable_vpc_flow_logs ? 1 : 0
+  iam_role_arn         = aws_iam_role.vpc_flow_logs[0].arn
+  log_destination      = aws_cloudwatch_log_group.vpc_flow_logs[0].arn
+  log_destination_type = "cloud-watch-logs"
+  traffic_type         = "ALL"
+  vpc_id               = aws_vpc.main.id
+
+  tags = {
+    Name        = "${var.project_name}-${var.environment}-vpc-flow-logs"
+    Environment = var.environment
+    Application = var.project_name
   }
 }
 
@@ -29,7 +111,7 @@ resource "aws_subnet" "private" {
   availability_zone = data.aws_availability_zones.available.names[count.index]
 
   tags = {
-    Name = "flink-pipeline-private-${var.environment}-${data.aws_availability_zones.available.names[count.index]}"
+    Name = "${var.project_name}-private-${var.environment}-${data.aws_availability_zones.available.names[count.index]}"
     Tier = "private"
   }
 }
@@ -39,48 +121,77 @@ resource "aws_subnet" "private" {
 # =============================================================================
 
 resource "aws_security_group" "flink" {
-  name_prefix = "flink-app-${var.environment}-"
+  name_prefix = "${var.project_name}-${var.environment}-"
   description = "Security group for the Flink application"
   vpc_id      = aws_vpc.main.id
 
   tags = {
-    Name        = "flink-app-${var.environment}"
+    Name        = "${var.project_name}-${var.environment}"
     Environment = var.environment
   }
 }
 
-resource "aws_vpc_security_group_egress_rule" "flink_all_outbound" {
-  security_group_id = aws_security_group.flink.id
-  description       = "Allow all outbound traffic"
-  ip_protocol       = "-1"
-  cidr_ipv4         = "0.0.0.0/0"
-
-  tags = {
-    Name = "flink-all-outbound-${var.environment}"
-  }
-}
-
-resource "aws_security_group" "rds" {
-  name_prefix = "rds-postgres-${var.environment}-"
-  description = "Security group for the RDS PostgreSQL instance"
+resource "aws_security_group" "endpoints" {
+  name_prefix = "${var.project_name}-${var.environment}-endpoints-"
+  description = "Security group for VPC interface endpoints"
   vpc_id      = aws_vpc.main.id
 
   tags = {
-    Name        = "rds-postgres-${var.environment}"
+    Name        = "${var.project_name}-${var.environment}-endpoints"
     Environment = var.environment
   }
 }
 
-resource "aws_vpc_security_group_ingress_rule" "rds_from_flink" {
-  security_group_id            = aws_security_group.rds.id
-  description                  = "Allow PostgreSQL inbound from Flink application"
-  from_port                    = 5432
-  to_port                      = 5432
+data "aws_prefix_list" "s3" {
+  name = "com.amazonaws.${var.aws_region}.s3"
+}
+
+resource "aws_vpc_security_group_egress_rule" "flink_dns_udp" {
+  security_group_id = aws_security_group.flink.id
+  description       = "Allow outbound DNS to VPC resolver over UDP"
+  ip_protocol       = "udp"
+  from_port         = 53
+  to_port           = 53
+  cidr_ipv4         = "${cidrhost(var.vpc_cidr, 2)}/32"
+}
+
+resource "aws_vpc_security_group_egress_rule" "flink_dns_tcp" {
+  security_group_id = aws_security_group.flink.id
+  description       = "Allow outbound DNS to VPC resolver over TCP"
+  ip_protocol       = "tcp"
+  from_port         = 53
+  to_port           = 53
+  cidr_ipv4         = "${cidrhost(var.vpc_cidr, 2)}/32"
+}
+
+resource "aws_vpc_security_group_egress_rule" "flink_s3_https" {
+  security_group_id = aws_security_group.flink.id
+  description       = "Allow outbound HTTPS to S3 via gateway endpoint prefix list"
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+  prefix_list_id    = data.aws_prefix_list.s3.id
+}
+
+resource "aws_vpc_security_group_egress_rule" "flink_endpoints_https" {
+  security_group_id            = aws_security_group.flink.id
+  description                  = "Allow outbound HTTPS to AWS interface endpoints"
   ip_protocol                  = "tcp"
+  from_port                    = 443
+  to_port                      = 443
+  referenced_security_group_id = aws_security_group.endpoints.id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "endpoints_from_flink" {
+  security_group_id            = aws_security_group.endpoints.id
+  description                  = "Allow HTTPS from Flink security group"
+  ip_protocol                  = "tcp"
+  from_port                    = 443
+  to_port                      = 443
   referenced_security_group_id = aws_security_group.flink.id
 
   tags = {
-    Name = "rds-from-flink-${var.environment}"
+    Name = "${var.project_name}-endpoints-from-flink-${var.environment}"
   }
 }
 
@@ -92,7 +203,7 @@ resource "aws_route_table" "private" {
   vpc_id = aws_vpc.main.id
 
   tags = {
-    Name        = "flink-pipeline-private-rt-${var.environment}"
+    Name        = "${var.project_name}-private-rt-${var.environment}"
     Environment = var.environment
   }
 }
@@ -117,7 +228,7 @@ resource "aws_vpc_endpoint" "s3" {
   route_table_ids   = [aws_route_table.private.id]
 
   tags = {
-    Name        = "flink-pipeline-s3-endpoint-${var.environment}"
+    Name        = "${var.project_name}-s3-endpoint-${var.environment}"
     Environment = var.environment
   }
 }
@@ -129,11 +240,67 @@ resource "aws_vpc_endpoint" "kinesis" {
   service_name        = "com.amazonaws.${var.aws_region}.kinesis-streams"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = aws_subnet.private[*].id
-  security_group_ids  = [aws_security_group.flink.id]
+  security_group_ids  = [aws_security_group.endpoints.id]
   private_dns_enabled = true
 
   tags = {
-    Name        = "flink-pipeline-kinesis-endpoint-${var.environment}"
+    Name        = "${var.project_name}-kinesis-endpoint-${var.environment}"
+    Environment = var.environment
+  }
+}
+
+resource "aws_vpc_endpoint" "logs" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.logs"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = aws_subnet.private[*].id
+  security_group_ids  = [aws_security_group.endpoints.id]
+  private_dns_enabled = true
+
+  tags = {
+    Name        = "${var.project_name}-logs-endpoint-${var.environment}"
+    Environment = var.environment
+  }
+}
+
+resource "aws_vpc_endpoint" "glue" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.glue"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = aws_subnet.private[*].id
+  security_group_ids  = [aws_security_group.endpoints.id]
+  private_dns_enabled = true
+
+  tags = {
+    Name        = "${var.project_name}-glue-endpoint-${var.environment}"
+    Environment = var.environment
+  }
+}
+
+resource "aws_vpc_endpoint" "kms" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.kms"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = aws_subnet.private[*].id
+  security_group_ids  = [aws_security_group.endpoints.id]
+  private_dns_enabled = true
+
+  tags = {
+    Name        = "${var.project_name}-kms-endpoint-${var.environment}"
+    Environment = var.environment
+  }
+}
+
+resource "aws_vpc_endpoint" "sts" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.sts"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = aws_subnet.private[*].id
+  security_group_ids  = [aws_security_group.endpoints.id]
+  private_dns_enabled = true
+
+  tags = {
+    Name        = "${var.project_name}-sts-endpoint-${var.environment}"
     Environment = var.environment
   }
 }

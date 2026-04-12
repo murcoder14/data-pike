@@ -11,7 +11,7 @@ data "aws_caller_identity" "current" {}
 # =============================================================================
 
 resource "aws_kinesis_stream" "main" {
-  name             = "flink-data-pipeline-${var.environment}"
+  name             = var.kinesis_stream_name
   shard_count      = var.kinesis_shard_count
   retention_period = 24
 
@@ -23,7 +23,7 @@ resource "aws_kinesis_stream" "main" {
   kms_key_id      = var.kms_key_arn
 
   tags = {
-    Name        = "flink-data-pipeline-${var.environment}"
+    Name        = "${var.project_name}-${var.environment}"
     Environment = var.environment
   }
 }
@@ -33,7 +33,7 @@ resource "aws_kinesis_stream" "main" {
 # =============================================================================
 
 resource "aws_cloudwatch_event_rule" "s3_object_created" {
-  name        = "flink-data-pipeline-${var.environment}-s3-object-created"
+  name        = "${var.project_name}-${var.environment}-s3-object-created"
   description = "Captures S3 object-created events from the Input Bucket and routes to Kinesis"
 
   event_pattern = jsonencode({
@@ -47,7 +47,7 @@ resource "aws_cloudwatch_event_rule" "s3_object_created" {
   })
 
   tags = {
-    Name        = "flink-data-pipeline-${var.environment}-s3-object-created"
+    Name        = "${var.project_name}-${var.environment}-s3-object-created"
     Environment = var.environment
   }
 }
@@ -101,11 +101,11 @@ data "aws_iam_policy_document" "eventbridge_kinesis" {
 }
 
 resource "aws_iam_role" "eventbridge_kinesis" {
-  name               = "flink-data-pipeline-${var.environment}-eventbridge-kinesis"
+  name               = "${var.project_name}-${var.environment}-eventbridge-kinesis"
   assume_role_policy = data.aws_iam_policy_document.eventbridge_assume_role.json
 
   tags = {
-    Name        = "flink-data-pipeline-${var.environment}-eventbridge-kinesis"
+    Name        = "${var.project_name}-${var.environment}-eventbridge-kinesis"
     Environment = var.environment
   }
 }

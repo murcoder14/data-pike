@@ -1,0 +1,12 @@
+{
+  "type": "record",
+  "name": "TemperatureSummaryRecord",
+  "namespace": "org.muralis.datahose.avro",
+  "fields": [
+    { "name": "date", "type": "string" },
+    { "name": "max_temp", "type": "int" },
+    { "name": "max_temp_city", "type": "string" },
+    { "name": "min_temp", "type": "int" },
+    { "name": "min_temp_city", "type": "string" }
+  ]
+}

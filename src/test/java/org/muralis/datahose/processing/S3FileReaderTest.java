@@ -1,5 +1,6 @@
 package org.muralis.datahose.processing;
 
+import org.muralis.datahose.model.FileFormat;
 import org.muralis.datahose.model.S3FileContent;
 import org.muralis.datahose.model.S3Notification;
 import org.apache.flink.util.Collector;
@@ -45,6 +46,7 @@ class S3FileReaderTest {
         S3FileContent result = collector.collected.get(0);
         assertSame(notification, result.notification());
         assertArrayEquals(data, result.content());
+        assertEquals(FileFormat.CSV, result.format());
         assertEquals("my-bucket", stubS3.lastRequestedBucket);
         assertEquals("data/file.csv", stubS3.lastRequestedKey);
     }
@@ -112,6 +114,15 @@ class S3FileReaderTest {
     @Test
     void extractBucketName_nullThrows() {
         assertThrows(IllegalArgumentException.class, () -> S3FileReader.extractBucketName(null));
+    }
+
+    @Test
+    void detectFormat_identifiesJsonFromContent() {
+        S3Notification notification = new S3Notification(
+                "s3://my-bucket", "unknown.dat", "2024-01-15T10:00:00Z", "aws:s3");
+
+        assertEquals(FileFormat.JSON,
+                S3FileReader.detectFormat(notification, "[{\"name\":\"Alice\"}]".getBytes(StandardCharsets.UTF_8)));
     }
 
     // ---- Test helpers ----

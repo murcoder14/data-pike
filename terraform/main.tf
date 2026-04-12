@@ -10,8 +10,11 @@ data "aws_region" "current" {}
 # =============================================================================
 
 module "monitoring" {
-  source      = "./modules/monitoring"
-  environment = var.environment
+  source                     = "./modules/monitoring"
+  project_name               = var.project_name
+  environment                = var.environment
+  log_retention_days         = var.log_retention_days
+  cloudwatch_log_kms_key_arn = var.enable_cloudwatch_logs_kms ? module.storage.kms_key_arn : null
 }
 
 # =============================================================================
@@ -19,9 +22,14 @@ module "monitoring" {
 # =============================================================================
 
 module "storage" {
-  source      = "./modules/storage"
-  environment = var.environment
-  aws_region  = var.aws_region
+  source                = "./modules/storage"
+  project_name          = var.project_name
+  environment           = var.environment
+  iceberg_database_name = var.iceberg_database_name
+  iceberg_table_name    = var.iceberg_table_name
+  input_bucket_name     = var.input_bucket_name != "" ? var.input_bucket_name : "${var.project_name}-${var.environment}-input"
+  iceberg_bucket_name   = var.iceberg_bucket_name != "" ? var.iceberg_bucket_name : "${var.project_name}-${var.environment}-iceberg"
+  jar_bucket_name       = var.jar_bucket_name != "" ? var.jar_bucket_name : "${var.project_name}-${var.environment}-jar"
 }
 
 # =============================================================================
@@ -29,10 +37,14 @@ module "storage" {
 # =============================================================================
 
 module "networking" {
-  source      = "./modules/networking"
-  environment = var.environment
-  vpc_cidr    = var.vpc_cidr
-  aws_region  = var.aws_region
+  source                     = "./modules/networking"
+  project_name               = var.project_name
+  environment                = var.environment
+  vpc_cidr                   = var.vpc_cidr
+  aws_region                 = var.aws_region
+  log_retention_days         = var.log_retention_days
+  cloudwatch_log_kms_key_arn = var.enable_cloudwatch_logs_kms ? module.storage.kms_key_arn : null
+  enable_vpc_flow_logs       = var.enable_vpc_flow_logs
 }
 
 # =============================================================================
@@ -41,26 +53,12 @@ module "networking" {
 
 module "kinesis" {
   source              = "./modules/kinesis"
+  project_name        = var.project_name
   environment         = var.environment
   kinesis_shard_count = var.kinesis_shard_count
+  kinesis_stream_name = var.kinesis_stream_name != "" ? var.kinesis_stream_name : "${var.project_name}-${var.environment}"
   kms_key_arn         = module.storage.kms_key_arn
   input_bucket_id     = module.storage.input_bucket_id
-}
-
-# =============================================================================
-# RDS Module
-# =============================================================================
-
-module "rds" {
-  source                 = "./modules/rds"
-  environment            = var.environment
-  aws_region             = var.aws_region
-  db_instance_class      = var.db_instance_class
-  kms_key_arn            = module.storage.kms_key_arn
-  db_master_password     = module.storage.db_master_password
-  db_password_secret_arn = module.storage.db_password_secret_arn
-  private_subnet_ids     = module.networking.private_subnet_ids
-  rds_security_group_id  = module.networking.rds_security_group_id
 }
 
 # =============================================================================
@@ -69,8 +67,13 @@ module "rds" {
 
 module "flink" {
   source                  = "./modules/flink"
+  providers = {
+    aws = aws.no_tags
+  }
+  project_name            = var.project_name
   environment             = var.environment
   file_key                = var.file_key
+  aws_region              = var.aws_region
   kms_key_arn             = module.storage.kms_key_arn
   kinesis_stream_arn      = module.kinesis.kinesis_stream_arn
   input_bucket_arn        = module.storage.input_bucket_arn
@@ -81,6 +84,10 @@ module "flink" {
   flink_log_stream_name   = module.monitoring.flink_log_stream_name
   private_subnet_ids      = module.networking.private_subnet_ids
   flink_security_group_id = module.networking.flink_security_group_id
+  iceberg_warehouse_path  = module.storage.iceberg_warehouse_path
+  iceberg_catalog_name    = var.iceberg_catalog_name
+  iceberg_table_name      = "${var.iceberg_database_name}.${var.iceberg_table_name}"
+  iceberg_database_name   = var.iceberg_database_name
 }
 
 # =============================================================================
@@ -89,6 +96,7 @@ module "flink" {
 
 module "cicd" {
   source                         = "./modules/cicd"
+  project_name                   = var.project_name
   environment                    = var.environment
   kms_key_arn                    = module.storage.kms_key_arn
   kms_alias_arn                  = module.storage.kms_alias_arn
@@ -109,4 +117,5 @@ module "cicd" {
   github_repo                    = var.github_repo
   github_branch                  = var.github_branch
   file_key                       = var.file_key
+  pipeline_artifacts_bucket_name = var.pipeline_artifacts_bucket_name != "" ? var.pipeline_artifacts_bucket_name : "${var.project_name}-${var.environment}-pipeline-artifacts"
 }

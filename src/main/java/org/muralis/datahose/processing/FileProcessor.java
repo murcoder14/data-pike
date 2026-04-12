@@ -1,30 +1,27 @@
 package org.muralis.datahose.processing;
 
+import org.muralis.datahose.model.FileFormat;
 import org.muralis.datahose.model.ProcessedRecord;
 import org.muralis.datahose.model.S3FileContent;
 import org.muralis.datahose.model.S3Notification;
+import org.muralis.datahose.model.TemperatureSummary;
+import org.muralis.datahose.model.WeatherObservation;
 import org.apache.flink.api.common.functions.RichFlatMapFunction;
 import org.apache.flink.util.Collector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
-import java.io.InputStreamReader;
 import java.io.Serial;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
  * Core transformation logic that processes raw file content into records for the Iceberg sink.
  *
- * <p>Takes {@link S3FileContent} (notification + raw bytes) as input, parses the content
- * as delimited text (CSV), and emits {@link ProcessedRecord} instances carrying the parsed
- * rows plus metadata for both IcebergSink and TransactionLogger.
+ * <p>Takes {@link S3FileContent} (notification + raw bytes + detected format) as input,
+ * routes the content to a format-specific parser, and emits canonical Avro-backed
+ * {@link ProcessedRecord} instances for downstream persistence.
  *
  * <p>Error handling: catches all processing exceptions, logs errors, and emits a
  * {@link ProcessedRecord} with FAILURE or PARTIAL status so the downstream
@@ -36,53 +33,64 @@ public class FileProcessor extends RichFlatMapFunction<S3FileContent, ProcessedR
     private static final long serialVersionUID = 1L;
     private static final Logger LOG = LoggerFactory.getLogger(FileProcessor.class);
 
-    static final String DEFAULT_DELIMITER = ",";
+    private final Map<FileFormat, StructuredFileParser> parsers;
+    private final TemperatureSummaryCalculator summaryCalculator;
 
-    private final String delimiter;
-
-    /** Creates a FileProcessor using the default comma delimiter. */
     public FileProcessor() {
-        this(DEFAULT_DELIMITER);
+        this(
+                Map.of(
+                        FileFormat.CSV, new DelimitedStructuredFileParser(","),
+                        FileFormat.TSV, new DelimitedStructuredFileParser("\t"),
+                        FileFormat.JSON, new JsonStructuredFileParser(),
+                        FileFormat.XML, new XmlStructuredFileParser()),
+                new TemperatureSummaryCalculator());
     }
 
-    /** Creates a FileProcessor with a custom field delimiter. */
-    public FileProcessor(String delimiter) {
-        this.delimiter = delimiter;
+            FileProcessor(
+                Map<FileFormat, StructuredFileParser> parsers,
+            TemperatureSummaryCalculator summaryCalculator) {
+        this.parsers = parsers;
+            this.summaryCalculator = summaryCalculator;
     }
 
     @Override
     public void flatMap(S3FileContent fileContent, Collector<ProcessedRecord> out) {
         S3Notification notification = fileContent.notification();
+        FileFormat fileFormat = fileContent.format();
         Instant processingTime = Instant.now();
 
-        LOG.info("Processing file: s3://{}/{}",
-                notification.getBucketUrl(), notification.getObjectName());
+        LOG.info("Processing file: {}/{} as {}",
+            notification.getBucketUrl(), notification.getObjectName(), fileFormat);
 
         try {
-            List<Map<String, String>> rows = parseContent(fileContent.content());
+            StructuredFileParser parser = requireParser(fileFormat);
+            List<WeatherObservation> observations = parser.parse(fileContent.content());
+            List<TemperatureSummary> records = summaryCalculator.summarizeByDate(observations);
 
-            if (rows.isEmpty()) {
-                LOG.warn("File s3://{}/{} produced zero records",
+            if (records.isEmpty()) {
+                LOG.warn("File {}/{} produced zero records",
                         notification.getBucketUrl(), notification.getObjectName());
             }
 
             out.collect(ProcessedRecord.builder()
                     .sourceNotification(notification)
-                    .rows(rows)
+                .fileFormat(fileFormat)
+                .records(records)
                     .status(ProcessedRecord.STATUS_SUCCESS)
-                    .recordsProcessed(rows.size())
-                    .recordsWritten(rows.size())
+                .recordsProcessed(records.size())
+                .recordsWritten(records.size())
                     .processingTime(processingTime)
                     .build());
 
         } catch (Exception e) {
-            LOG.error("Error processing file s3://{}/{}: {}",
+                LOG.error("Error processing file {}/{}: {}",
                     notification.getBucketUrl(), notification.getObjectName(),
                     e.getMessage(), e);
 
             out.collect(ProcessedRecord.builder()
                     .sourceNotification(notification)
-                    .rows(List.of())
+                    .fileFormat(fileFormat)
+                    .records(List.of())
                     .status(ProcessedRecord.STATUS_FAILURE)
                     .recordsProcessed(0)
                     .recordsWritten(0)
@@ -92,59 +100,11 @@ public class FileProcessor extends RichFlatMapFunction<S3FileContent, ProcessedR
         }
     }
 
-    /**
-     * Parses raw byte content as delimited text. The first line is treated as a header
-     * row defining column names. Subsequent lines are parsed into maps of
-     * column-name → value.
-     *
-     * <p>Blank lines are skipped. If a data row has fewer fields than the header,
-     * missing columns get empty-string values. Extra fields beyond the header are ignored.
-     *
-     * @param content raw file bytes (UTF-8 encoded)
-     * @return list of parsed rows
-     */
-    List<Map<String, String>> parseContent(byte[] content) throws Exception {
-        List<Map<String, String>> rows = new ArrayList<>();
-
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(new ByteArrayInputStream(content), StandardCharsets.UTF_8))) {
-
-            // First non-blank line is the header
-            String headerLine = readNextNonBlankLine(reader);
-            if (headerLine == null) {
-                return rows; // empty file
-            }
-
-            String[] headers = headerLine.split(delimiter, -1);
-            for (int i = 0; i < headers.length; i++) {
-                headers[i] = headers[i].trim();
-            }
-
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (line.isBlank()) {
-                    continue;
-                }
-
-                String[] values = line.split(delimiter, -1);
-                Map<String, String> row = new LinkedHashMap<>();
-                for (int i = 0; i < headers.length; i++) {
-                    row.put(headers[i], i < values.length ? values[i].trim() : "");
-                }
-                rows.add(row);
-            }
+    private StructuredFileParser requireParser(FileFormat format) {
+        StructuredFileParser parser = parsers.get(format);
+        if (parser == null) {
+            throw new IllegalArgumentException("Unsupported file format: " + format);
         }
-
-        return rows;
-    }
-
-    private String readNextNonBlankLine(BufferedReader reader) throws Exception {
-        String line;
-        while ((line = reader.readLine()) != null) {
-            if (!line.isBlank()) {
-                return line;
-            }
-        }
-        return null;
+        return parser;
     }
 }

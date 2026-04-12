@@ -15,27 +15,6 @@ output "kms_alias_arn" {
   value       = aws_kms_alias.encryption.arn
 }
 
-output "db_password_secret_arn" {
-  description = "ARN of the Secrets Manager secret storing the database master password"
-  value       = aws_secretsmanager_secret.db_password.arn
-}
-
-output "db_password_secret_name" {
-  description = "Name of the Secrets Manager secret storing the database master password"
-  value       = aws_secretsmanager_secret.db_password.name
-}
-
-output "secret_rotation_lambda_arn" {
-  description = "ARN of the Lambda function used for secret rotation"
-  value       = aws_lambda_function.secret_rotation.arn
-}
-
-output "db_master_password" {
-  description = "The generated database master password"
-  value       = random_password.db_master.result
-  sensitive   = true
-}
-
 output "input_bucket_arn" {
   description = "ARN of the S3 Input Bucket for file ingestion"
   value       = aws_s3_bucket.input.arn
@@ -64,4 +43,21 @@ output "jar_bucket_arn" {
 output "jar_bucket_id" {
   description = "Name/ID of the S3 JAR Bucket"
   value       = aws_s3_bucket.jar.id
+}
+
+# --- Glue Catalog Outputs ---
+
+output "glue_database_name" {
+  description = "Name of the Glue Catalog database"
+  value       = aws_glue_catalog_database.iceberg.name
+}
+
+output "glue_table_name" {
+  description = "Name of the Glue Catalog Iceberg table"
+  value       = aws_glue_catalog_table.iceberg.name
+}
+
+output "iceberg_warehouse_path" {
+  description = "S3 path for the Iceberg warehouse"
+  value       = "s3://${aws_s3_bucket.iceberg.id}/warehouse"
 }

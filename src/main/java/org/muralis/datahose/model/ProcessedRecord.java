@@ -7,9 +7,8 @@ import lombok.ToString;
 import java.io.Serial;
 import java.io.Serializable;
 import java.time.Instant;
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -17,8 +16,8 @@ import java.util.Objects;
  * {@code TransactionLogger}.
  *
  * <p>Each instance represents the result of processing a single S3 file. It contains
- * the parsed data rows (as maps of column-name to value), source metadata from the
- * original notification, and processing outcome information (status, counts, errors).
+ * temperature summary POJOs, source metadata from the original notification, and
+ * processing outcome information (status, counts, errors).
  */
 @Getter
 @EqualsAndHashCode
@@ -33,8 +32,9 @@ public class ProcessedRecord implements Serializable {
     public static final String STATUS_PARTIAL = "PARTIAL";
 
     private final S3Notification sourceNotification;
+    private final FileFormat fileFormat;
     @ToString.Exclude
-    private final List<Map<String, String>> rows;
+    private final List<TemperatureSummary> records;
     private final String status;
     private final long recordsProcessed;
     private final long recordsWritten;
@@ -43,7 +43,8 @@ public class ProcessedRecord implements Serializable {
 
     private ProcessedRecord(Builder builder) {
         this.sourceNotification = builder.sourceNotification;
-        this.rows = builder.rows == null ? Collections.emptyList() : Collections.unmodifiableList(builder.rows);
+        this.fileFormat = builder.fileFormat;
+        this.records = builder.records == null ? new ArrayList<>() : new ArrayList<>(builder.records);
         this.status = builder.status;
         this.recordsProcessed = builder.recordsProcessed;
         this.recordsWritten = builder.recordsWritten;
@@ -57,7 +58,8 @@ public class ProcessedRecord implements Serializable {
 
     public static class Builder {
         private S3Notification sourceNotification;
-        private List<Map<String, String>> rows;
+        private FileFormat fileFormat = FileFormat.UNKNOWN;
+        private List<TemperatureSummary> records;
         private String status;
         private long recordsProcessed;
         private long recordsWritten;
@@ -67,7 +69,8 @@ public class ProcessedRecord implements Serializable {
         private Builder() {}
 
         public Builder sourceNotification(S3Notification sourceNotification) { this.sourceNotification = sourceNotification; return this; }
-        public Builder rows(List<Map<String, String>> rows) { this.rows = rows; return this; }
+    public Builder fileFormat(FileFormat fileFormat) { this.fileFormat = fileFormat; return this; }
+        public Builder records(List<TemperatureSummary> records) { this.records = records; return this; }
         public Builder status(String status) { this.status = status; return this; }
         public Builder recordsProcessed(long recordsProcessed) { this.recordsProcessed = recordsProcessed; return this; }
         public Builder recordsWritten(long recordsWritten) { this.recordsWritten = recordsWritten; return this; }

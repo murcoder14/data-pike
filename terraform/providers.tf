@@ -4,15 +4,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.5"
-    }
-    archive = {
-      source  = "hashicorp/archive"
-      version = "~> 2.4"
+      version = "~> 6.40"
     }
   }
 }
@@ -23,8 +15,14 @@ provider "aws" {
   default_tags {
     tags = {
       Environment = var.environment
-      Application = "flink-data-pipeline"
+      Application = var.project_name
       ManagedBy   = "terraform"
     }
   }
+}
+
+# Use this provider for resources that must be created without tags first.
+provider "aws" {
+  alias  = "no_tags"
+  region = var.aws_region
 }

@@ -29,21 +29,21 @@ output "kms_alias_arn" {
   value       = module.storage.kms_alias_arn
 }
 
-# --- Secrets Manager Outputs ---
+# --- Glue Catalog Outputs ---
 
-output "db_password_secret_arn" {
-  description = "ARN of the Secrets Manager secret storing the database master password"
-  value       = module.storage.db_password_secret_arn
+output "glue_database_name" {
+  description = "Name of the Glue Catalog database"
+  value       = module.storage.glue_database_name
 }
 
-output "db_password_secret_name" {
-  description = "Name of the Secrets Manager secret storing the database master password"
-  value       = module.storage.db_password_secret_name
+output "glue_table_name" {
+  description = "Name of the Glue Catalog Iceberg table"
+  value       = module.storage.glue_table_name
 }
 
-output "secret_rotation_lambda_arn" {
-  description = "ARN of the Lambda function used for secret rotation"
-  value       = module.storage.secret_rotation_lambda_arn
+output "iceberg_warehouse_path" {
+  description = "S3 path for the Iceberg warehouse"
+  value       = module.storage.iceberg_warehouse_path
 }
 
 # --- S3 Bucket Outputs ---
@@ -107,11 +107,6 @@ output "flink_security_group_id" {
   value       = module.networking.flink_security_group_id
 }
 
-output "rds_security_group_id" {
-  description = "ID of the RDS PostgreSQL security group"
-  value       = module.networking.rds_security_group_id
-}
-
 # --- VPC Endpoint Outputs ---
 
 output "s3_vpc_endpoint_id" {
@@ -156,70 +151,6 @@ output "eventbridge_rule_name" {
 output "eventbridge_kinesis_role_arn" {
   description = "ARN of the IAM role used by EventBridge to put records into Kinesis"
   value       = module.kinesis.eventbridge_kinesis_role_arn
-}
-
-# --- RDS Outputs ---
-
-output "rds_instance_id" {
-  description = "Identifier of the RDS PostgreSQL instance"
-  value       = module.rds.rds_instance_id
-}
-
-output "rds_instance_arn" {
-  description = "ARN of the RDS PostgreSQL instance"
-  value       = module.rds.rds_instance_arn
-}
-
-output "rds_instance_endpoint" {
-  description = "Connection endpoint for the RDS PostgreSQL instance"
-  value       = module.rds.rds_instance_endpoint
-}
-
-output "rds_instance_address" {
-  description = "Hostname of the RDS PostgreSQL instance"
-  value       = module.rds.rds_instance_address
-}
-
-output "rds_instance_port" {
-  description = "Port of the RDS PostgreSQL instance"
-  value       = module.rds.rds_instance_port
-}
-
-output "rds_db_name" {
-  description = "Name of the default database on the RDS instance"
-  value       = module.rds.rds_db_name
-}
-
-output "rds_subnet_group_name" {
-  description = "Name of the DB subnet group"
-  value       = module.rds.rds_subnet_group_name
-}
-
-output "rds_enhanced_monitoring_role_arn" {
-  description = "ARN of the IAM role for RDS Enhanced Monitoring"
-  value       = module.rds.rds_enhanced_monitoring_role_arn
-}
-
-# --- RDS Proxy Outputs ---
-
-output "rds_proxy_arn" {
-  description = "ARN of the RDS Proxy"
-  value       = module.rds.rds_proxy_arn
-}
-
-output "rds_proxy_endpoint" {
-  description = "Connection endpoint for the RDS Proxy"
-  value       = module.rds.rds_proxy_endpoint
-}
-
-output "rds_proxy_name" {
-  description = "Name of the RDS Proxy"
-  value       = module.rds.rds_proxy_name
-}
-
-output "rds_proxy_role_arn" {
-  description = "ARN of the IAM role used by the RDS Proxy for Secrets Manager access"
-  value       = module.rds.rds_proxy_role_arn
 }
 
 # --- CloudWatch Log Group Outputs ---

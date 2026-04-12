@@ -6,10 +6,10 @@
 # --- S3 State Bucket ---
 
 resource "aws_s3_bucket" "terraform_state" {
-  bucket = "flink-data-pipeline-tf-state"
+  bucket = "${var.project_name}-tf-state"
 
   tags = {
-    Name = "flink-data-pipeline-tf-state"
+    Name = "${var.project_name}-tf-state"
   }
 
   lifecycle {
@@ -44,10 +44,39 @@ resource "aws_s3_bucket_public_access_block" "terraform_state" {
   restrict_public_buckets = true
 }
 
+data "aws_iam_policy_document" "terraform_state_tls_only" {
+  statement {
+    sid    = "DenyInsecureTransport"
+    effect = "Deny"
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+
+    actions = ["s3:*"]
+    resources = [
+      aws_s3_bucket.terraform_state.arn,
+      "${aws_s3_bucket.terraform_state.arn}/*"
+    ]
+
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "terraform_state_tls_only" {
+  bucket = aws_s3_bucket.terraform_state.id
+  policy = data.aws_iam_policy_document.terraform_state_tls_only.json
+}
+
 # --- DynamoDB Lock Table ---
 
 resource "aws_dynamodb_table" "terraform_lock" {
-  name         = "flink-data-pipeline-tf-lock"
+  name         = "${var.project_name}-tf-lock"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "LockID"
 
@@ -57,6 +86,6 @@ resource "aws_dynamodb_table" "terraform_lock" {
   }
 
   tags = {
-    Name = "flink-data-pipeline-tf-lock"
+    Name = "${var.project_name}-tf-lock"
   }
 }

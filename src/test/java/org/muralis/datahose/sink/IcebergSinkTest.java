@@ -1,7 +1,10 @@
 package org.muralis.datahose.sink;
 
+import org.apache.avro.generic.GenericRecord;
+import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.muralis.datahose.model.ProcessedRecord;
 import org.muralis.datahose.model.S3Notification;
+import org.muralis.datahose.model.TemperatureSummary;
 import org.muralis.datahose.sink.IcebergSink.IcebergConfig;
 import org.muralis.datahose.sink.IcebergSink.IcebergSinkWriter;
 import org.muralis.datahose.sink.IcebergSink.IcebergTableWriter;
@@ -12,7 +15,6 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -48,7 +50,11 @@ class IcebergSinkTest {
                 .processingTime(Instant.now())
                 .build();
 
-        writer.write(failureRecord, null);
+        try {
+            writer.write(failureRecord, null);
+        } finally {
+            writer.close();
+        }
 
         assertTrue(tableWriter.writtenBatches.isEmpty(), "FAILURE records should be skipped");
     }
@@ -60,14 +66,18 @@ class IcebergSinkTest {
 
         ProcessedRecord emptyRecord = ProcessedRecord.builder()
                 .sourceNotification(notification)
-                .rows(List.of())
+            .records(List.of())
                 .status(ProcessedRecord.STATUS_SUCCESS)
                 .recordsProcessed(0)
                 .recordsWritten(0)
                 .processingTime(Instant.now())
                 .build();
 
-        writer.write(emptyRecord, null);
+        try {
+            writer.write(emptyRecord, null);
+        } finally {
+            writer.close();
+        }
 
         assertTrue(tableWriter.writtenBatches.isEmpty(), "Empty row records should be skipped");
     }
@@ -77,20 +87,24 @@ class IcebergSinkTest {
         RecordingWriter tableWriter = new RecordingWriter();
         IcebergSinkWriter writer = new NoSleepSinkWriter(CONFIG, tableWriter);
 
-        List<Map<String, String>> rows = List.of(
-                Map.of("id", "1", "amount", "100.00"),
-                Map.of("id", "2", "amount", "200.00"));
+        List<TemperatureSummary> rows = List.of(
+                temperatureSummary(0),
+                temperatureSummary(1));
 
         ProcessedRecord record = ProcessedRecord.builder()
                 .sourceNotification(notification)
-                .rows(rows)
+                .records(rows)
                 .status(ProcessedRecord.STATUS_SUCCESS)
                 .recordsProcessed(2)
                 .recordsWritten(2)
                 .processingTime(Instant.now())
                 .build();
 
-        writer.write(record, null);
+        try {
+            writer.write(record, null);
+        } finally {
+            writer.close();
+        }
 
         assertEquals(1, tableWriter.writtenBatches.size());
         assertEquals(2, tableWriter.writtenBatches.get(0).size());
@@ -101,11 +115,11 @@ class IcebergSinkTest {
         RecordingWriter tableWriter = new RecordingWriter();
         IcebergSinkWriter writer = new NoSleepSinkWriter(CONFIG, tableWriter);
 
-        List<Map<String, String>> rows = List.of(Map.of("id", "1", "amount", "50.00"));
+        List<TemperatureSummary> rows = List.of(temperatureSummary(0));
 
         ProcessedRecord record = ProcessedRecord.builder()
                 .sourceNotification(notification)
-                .rows(rows)
+                .records(rows)
                 .status(ProcessedRecord.STATUS_PARTIAL)
                 .recordsProcessed(3)
                 .recordsWritten(1)
@@ -113,7 +127,11 @@ class IcebergSinkTest {
                 .processingTime(Instant.now())
                 .build();
 
-        writer.write(record, null);
+        try {
+            writer.write(record, null);
+        } finally {
+            writer.close();
+        }
 
         assertEquals(1, tableWriter.writtenBatches.size());
         assertEquals(1, tableWriter.writtenBatches.get(0).size());
@@ -124,8 +142,12 @@ class IcebergSinkTest {
         RecordingWriter tableWriter = new RecordingWriter();
         NoSleepSinkWriter writer = new NoSleepSinkWriter(CONFIG, tableWriter);
 
-        ProcessedRecord record = buildSuccessRecord(List.of(Map.of("id", "1")));
-        writer.writeWithRetry(record);
+        ProcessedRecord record = buildSuccessRecord(List.of(temperatureSummary(0)));
+        try {
+            writer.writeWithRetry(record);
+        } finally {
+            writer.close();
+        }
 
         assertEquals(1, tableWriter.writtenBatches.size());
     }
@@ -135,7 +157,7 @@ class IcebergSinkTest {
         AtomicInteger callCount = new AtomicInteger(0);
         IcebergTableWriter failThenSucceed = new IcebergTableWriter() {
             @Override
-            public void write(String tableName, List<Map<String, String>> rows) throws Exception {
+            public void write(String tableName, List<GenericRecord> rows) throws Exception {
                 if (callCount.incrementAndGet() <= 2) {
                     throw new RuntimeException("Transient error");
                 }
@@ -146,9 +168,13 @@ class IcebergSinkTest {
         };
 
         NoSleepSinkWriter writer = new NoSleepSinkWriter(CONFIG, failThenSucceed);
-        ProcessedRecord record = buildSuccessRecord(List.of(Map.of("id", "1")));
+        ProcessedRecord record = buildSuccessRecord(List.of(temperatureSummary(0)));
 
-        writer.writeWithRetry(record);
+        try {
+            writer.writeWithRetry(record);
+        } finally {
+            writer.close();
+        }
 
         assertEquals(3, callCount.get(), "Should have attempted 3 times");
     }
@@ -157,7 +183,7 @@ class IcebergSinkTest {
     void writeWithRetry_throwsAfterMaxRetries() {
         IcebergTableWriter alwaysFails = new IcebergTableWriter() {
             @Override
-            public void write(String tableName, List<Map<String, String>> rows) throws Exception {
+            public void write(String tableName, List<GenericRecord> rows) throws Exception {
                 throw new RuntimeException("Persistent failure");
             }
 
@@ -166,12 +192,54 @@ class IcebergSinkTest {
         };
 
         NoSleepSinkWriter writer = new NoSleepSinkWriter(CONFIG, alwaysFails);
-        ProcessedRecord record = buildSuccessRecord(List.of(Map.of("id", "1")));
+        ProcessedRecord record = buildSuccessRecord(List.of(temperatureSummary(0)));
 
-        IOException ex = assertThrows(IOException.class, () -> writer.writeWithRetry(record));
+        IOException ex;
+        try {
+            ex = assertThrows(IOException.class, () -> writer.writeWithRetry(record));
+        } finally {
+            try {
+                writer.close();
+            } catch (Exception exception) {
+                fail("Unexpected error closing writer", exception);
+            }
+        }
         assertTrue(ex.getMessage().contains("Iceberg write failed after 3 retries"));
         assertNotNull(ex.getCause());
         assertEquals("Persistent failure", ex.getCause().getMessage());
+    }
+
+    @Test
+    void writeWithRetry_failsFastWhenTableMissing() {
+        AtomicInteger callCount = new AtomicInteger(0);
+        IcebergTableWriter missingTableWriter = new IcebergTableWriter() {
+            @Override
+            public void write(String tableName, List<GenericRecord> rows) {
+                callCount.incrementAndGet();
+                throw new NoSuchTableException("missing table");
+            }
+
+            @Override
+            public void close() {}
+        };
+
+        NoSleepSinkWriter writer = new NoSleepSinkWriter(CONFIG, missingTableWriter);
+        ProcessedRecord record = buildSuccessRecord(List.of(temperatureSummary(0)));
+
+        IOException ex;
+        try {
+            ex = assertThrows(IOException.class, () -> writer.writeWithRetry(record));
+        } finally {
+            try {
+                writer.close();
+            } catch (Exception exception) {
+                fail("Unexpected error closing writer", exception);
+            }
+        }
+
+        assertEquals(1, callCount.get(), "Missing table should not be retried");
+        assertTrue(ex.getMessage().contains("Provision it via Terraform"));
+        assertTrue(ex.getCause() instanceof NoSuchTableException);
     }
 
     @Test
@@ -199,10 +267,10 @@ class IcebergSinkTest {
     // Helpers
     // -------------------------------------------------------------------------
 
-    private ProcessedRecord buildSuccessRecord(List<Map<String, String>> rows) {
+    private ProcessedRecord buildSuccessRecord(List<TemperatureSummary> rows) {
         return ProcessedRecord.builder()
                 .sourceNotification(notification)
-                .rows(rows)
+                .records(rows)
                 .status(ProcessedRecord.STATUS_SUCCESS)
                 .recordsProcessed(rows.size())
                 .recordsWritten(rows.size())
@@ -210,12 +278,21 @@ class IcebergSinkTest {
                 .build();
     }
 
+    private TemperatureSummary temperatureSummary(long recordIndex) {
+        return new TemperatureSummary(
+                "2024-07-0" + (recordIndex + 1),
+                100 + (int) recordIndex,
+                "MaxCity" + recordIndex,
+                70 + (int) recordIndex,
+                "MinCity" + recordIndex);
+    }
+
     /** Recording writer that captures all write calls. */
     private static class RecordingWriter implements IcebergTableWriter {
-        final List<List<Map<String, String>>> writtenBatches = new ArrayList<>();
+        final List<List<GenericRecord>> writtenBatches = new ArrayList<>();
 
         @Override
-        public void write(String tableName, List<Map<String, String>> rows) {
+        public void write(String tableName, List<GenericRecord> rows) {
             writtenBatches.add(new ArrayList<>(rows));
         }
 

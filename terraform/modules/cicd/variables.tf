@@ -1,5 +1,11 @@
 # CI/CD Module - Input Variables
 
+variable "project_name" {
+  description = "Project name used as a prefix for all resource names"
+  type        = string
+  nullable    = false
+}
+
 variable "environment" {
   description = "Deployment environment (dev, staging, prod)"
   type        = string
@@ -116,6 +122,12 @@ variable "github_branch" {
 
 variable "file_key" {
   description = "S3 object key for the FAT JAR"
+  type        = string
+  nullable    = false
+}
+
+variable "pipeline_artifacts_bucket_name" {
+  description = "Name of the S3 bucket for pipeline artifacts"
   type        = string
   nullable    = false
 }

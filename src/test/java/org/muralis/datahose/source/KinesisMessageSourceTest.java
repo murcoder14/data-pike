@@ -5,7 +5,6 @@ import org.apache.flink.connector.kinesis.source.config.KinesisSourceConfigOptio
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Unit tests for {@link KinesisMessageSource}.

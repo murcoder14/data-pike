@@ -1,5 +1,11 @@
 # Flink Module - Input Variables
 
+variable "project_name" {
+  description = "Project name used as a prefix for all resource names"
+  type        = string
+  nullable    = false
+}
+
 variable "environment" {
   description = "Deployment environment (dev, staging, prod)"
   type        = string
@@ -68,6 +74,36 @@ variable "private_subnet_ids" {
 
 variable "flink_security_group_id" {
   description = "ID of the Flink application security group"
+  type        = string
+  nullable    = false
+}
+
+variable "aws_region" {
+  description = "AWS region for the application"
+  type        = string
+  nullable    = false
+}
+
+variable "iceberg_warehouse_path" {
+  description = "S3 path for the Iceberg warehouse (e.g., s3://bucket-name/warehouse)"
+  type        = string
+  nullable    = false
+}
+
+variable "iceberg_catalog_name" {
+  description = "Name of the Iceberg catalog"
+  type        = string
+  nullable    = false
+}
+
+variable "iceberg_table_name" {
+  description = "Name of the Iceberg table"
+  type        = string
+  nullable    = false
+}
+
+variable "iceberg_database_name" {
+  description = "Name of the Glue Catalog database (for IAM scoping)"
   type        = string
   nullable    = false
 }

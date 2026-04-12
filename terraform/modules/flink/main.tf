@@ -8,7 +8,8 @@ data "aws_region" "current" {}
 
 locals {
   account_id = data.aws_caller_identity.current.account_id
-  region     = data.aws_region.current.name
+  region     = data.aws_region.current.id
+  iceberg_table_resource_name = element(split(".", var.iceberg_table_name), length(split(".", var.iceberg_table_name)) - 1)
 }
 
 # =============================================================================
@@ -16,7 +17,7 @@ locals {
 # =============================================================================
 
 resource "aws_iam_role" "flink_execution" {
-  name = "flink-data-pipeline-${var.environment}-flink-execution"
+  name = "${var.project_name}-${var.environment}-flink-execution"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -37,9 +38,9 @@ resource "aws_iam_role" "flink_execution" {
   })
 
   tags = {
-    Name        = "flink-data-pipeline-${var.environment}-flink-execution"
+    Name        = "${var.project_name}-${var.environment}-flink-execution"
     Environment = var.environment
-    Application = "flink-data-pipeline"
+    Application = var.project_name
   }
 }
 
@@ -267,6 +268,42 @@ resource "aws_iam_role_policy" "flink_kms" {
 }
 
 # =============================================================================
+# Glue Catalog Permissions (for Iceberg table metadata)
+# =============================================================================
+
+resource "aws_iam_role_policy" "flink_glue" {
+  name = "flink-glue-catalog"
+  role = aws_iam_role.flink_execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "GlueCatalogReadWriteMetadata"
+        Effect = "Allow"
+        Action = [
+          "glue:GetDatabase",
+          "glue:GetDatabases",
+          "glue:GetTable",
+          "glue:GetTables",
+          "glue:GetTableVersion",
+          "glue:GetTableVersions",
+          "glue:UpdateTable",
+          "glue:GetPartition",
+          "glue:GetPartitions",
+          "glue:BatchGetPartition"
+        ]
+        Resource = [
+          "arn:aws:glue:${local.region}:${local.account_id}:catalog",
+          "arn:aws:glue:${local.region}:${local.account_id}:database/${var.iceberg_database_name}",
+          "arn:aws:glue:${local.region}:${local.account_id}:table/${var.iceberg_database_name}/${local.iceberg_table_resource_name}"
+        ]
+      }
+    ]
+  })
+}
+
+# =============================================================================
 # VPC Networking Permissions (for ENI management in VPC-deployed Flink)
 # =============================================================================
 
@@ -287,13 +324,8 @@ resource "aws_iam_role_policy" "flink_vpc" {
           "ec2:DescribeVpcs",
           "ec2:DescribeDhcpOptions"
         ]
-        # EC2 Describe actions do not support resource-level permissions
-        Resource = "arn:aws:ec2:${local.region}:${local.account_id}:*"
-        Condition = {
-          StringEquals = {
-            "aws:RequestedRegion" = local.region
-          }
-        }
+        # EC2 Describe actions require Resource "*" — they do not support resource-level permissions
+        Resource = "*"
       },
       {
         Sid    = "VPCNetworkInterfaceCreate"
@@ -335,9 +367,14 @@ resource "aws_iam_role_policy" "flink_vpc" {
 # =============================================================================
 
 resource "aws_kinesisanalyticsv2_application" "flink" {
-  name                   = "flink-data-pipeline-${var.environment}"
-  runtime_environment    = "FLINK-1_19"
+  name                   = "${var.project_name}-${var.environment}"
+  runtime_environment    = "FLINK-2_2"
   service_execution_role = aws_iam_role.flink_execution.arn
+
+  lifecycle {
+    # Prevent accidental destroy/recreate in normal applies.
+    prevent_destroy = true
+  }
 
   # Streaming mode (Requirement 6.2)
   application_mode = "STREAMING"
@@ -380,6 +417,26 @@ resource "aws_kinesisanalyticsv2_application" "flink" {
       subnet_ids         = var.private_subnet_ids
       security_group_ids = [var.flink_security_group_id]
     }
+
+    # Runtime properties passed to the application via KinesisAnalyticsRuntime
+    environment_properties {
+      property_group {
+        property_group_id = "KinesisSource"
+        property_map = {
+          "stream.arn" = var.kinesis_stream_arn
+          "aws.region" = var.aws_region
+        }
+      }
+
+      property_group {
+        property_group_id = "IcebergSink"
+        property_map = {
+          "warehouse.path" = var.iceberg_warehouse_path
+          "catalog.name"   = var.iceberg_catalog_name
+          "table.name"     = var.iceberg_table_name
+        }
+      }
+    }
   }
 
   # CloudWatch logging (Requirement 14.1)
@@ -390,9 +447,4 @@ resource "aws_kinesisanalyticsv2_application" "flink" {
   # Continuously running streaming application (Requirement 6.2)
   start_application = true
 
-  tags = {
-    Name        = "flink-data-pipeline-${var.environment}"
-    Environment = var.environment
-    Application = "flink-data-pipeline"
-  }
 }

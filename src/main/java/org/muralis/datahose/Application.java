@@ -7,7 +7,6 @@ import org.muralis.datahose.processing.FileProcessor;
 import org.muralis.datahose.processing.MessageParser;
 import org.muralis.datahose.processing.S3FileReader;
 import org.muralis.datahose.sink.IcebergSink;
-import org.muralis.datahose.sink.TransactionLogger;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.connector.kinesis.source.KinesisStreamsSource;
 import org.apache.flink.core.execution.CheckpointingMode;
@@ -16,20 +15,27 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.muralis.datahose.source.KinesisMessageSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.services.kinesisanalyticsv2.KinesisAnalyticsV2Client;
+import software.amazon.awssdk.services.kinesisanalyticsv2.model.DescribeApplicationRequest;
+import software.amazon.awssdk.services.kinesisanalyticsv2.model.DescribeApplicationResponse;
+import software.amazon.awssdk.services.kinesisanalyticsv2.model.PropertyGroup;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Entry point for the Flink streaming data pipeline.
  *
- * <p>Sets up the {@link StreamExecutionEnvironment}, configures checkpointing for
- * fault tolerance, reads configuration from environment variables, and wires the
- * full pipeline:
+ * <p>Reads configuration from Managed Flink runtime properties via the
+ * KinesisAnalyticsV2 DescribeApplication API, configures checkpointing,
+ * and wires the pipeline:
  * <ol>
  *   <li>KinesisMessageSource → DataStream&lt;String&gt;</li>
  *   <li>MessageParser → DataStream&lt;S3Notification&gt;</li>
  *   <li>S3FileReader → DataStream&lt;S3FileContent&gt;</li>
  *   <li>FileProcessor → DataStream&lt;ProcessedRecord&gt;</li>
  *   <li>IcebergSink (write to Iceberg tables)</li>
- *   <li>TransactionLogger (log transactions to RDS PostgreSQL)</li>
  * </ol>
  */
 public class Application {
@@ -39,17 +45,19 @@ public class Application {
     static final long CHECKPOINT_INTERVAL_MS = 60_000L;
 
     public static void main(String[] args) throws Exception {
-        // --- Configuration from environment variables ---
-        String kinesisStreamArn = getRequiredEnv("KINESIS_STREAM_ARN");
-        String awsRegion = getRequiredEnv("AWS_REGION");
-        String icebergWarehousePath = getRequiredEnv("ICEBERG_WAREHOUSE_PATH");
-        String icebergCatalogName = getRequiredEnv("ICEBERG_CATALOG_NAME");
-        String icebergTableName = getRequiredEnv("ICEBERG_TABLE_NAME");
-        String jdbcUrl = getRequiredEnv("JDBC_URL");
-        String dbUsername = getRequiredEnv("DB_USERNAME");
-        String dbPassword = getRequiredEnv("DB_PASSWORD");
+        // --- Read runtime properties from Managed Flink environment ---
+        Map<String, Map<String, String>> appProperties = getApplicationProperties();
 
-        LOG.info("Starting Flink Data Pipeline: stream={}, region={}, icebergTable={}.{}.{}",
+        Map<String, String> kinesisProps = getPropertyGroup(appProperties, "KinesisSource");
+        String kinesisStreamArn = getRequiredProperty(kinesisProps, "stream.arn");
+        String awsRegion = getRequiredProperty(kinesisProps, "aws.region");
+
+        Map<String, String> icebergProps = getPropertyGroup(appProperties, "IcebergSink");
+        String icebergWarehousePath = getRequiredProperty(icebergProps, "warehouse.path");
+        String icebergCatalogName = getRequiredProperty(icebergProps, "catalog.name");
+        String icebergTableName = getRequiredProperty(icebergProps, "table.name");
+
+        LOG.info("Starting Flink Data Pipeline: stream={}, region={}, iceberg={}/{}/{}",
                 kinesisStreamArn, awsRegion, icebergCatalogName, icebergWarehousePath, icebergTableName);
 
         // --- StreamExecutionEnvironment ---
@@ -61,9 +69,6 @@ public class Application {
         // --- Build sink configurations ---
         IcebergSink.IcebergConfig icebergConfig = new IcebergSink.IcebergConfig(
                 icebergWarehousePath, icebergCatalogName, icebergTableName);
-
-        TransactionLogger.JdbcConfig jdbcConfig = new TransactionLogger.JdbcConfig(
-                jdbcUrl, dbUsername, dbPassword, icebergTableName);
 
         // --- Wire the pipeline ---
 
@@ -92,24 +97,71 @@ public class Application {
                 .sinkTo(new IcebergSink(icebergConfig))
                 .name("IcebergSink");
 
-        // 6. TransactionLogger — log transaction details to RDS PostgreSQL
-        processedRecords
-                .sinkTo(new TransactionLogger(jdbcConfig))
-                .name("TransactionLogger");
-
         // --- Execute ---
         env.execute("Flink Data Pipeline");
     }
 
     /**
-     * Reads a required environment variable. Throws {@link IllegalStateException}
-     * if the variable is not set or is blank.
+     * Fetches application runtime properties from the Managed Flink service
+     * using the KinesisAnalyticsV2 DescribeApplication API.
+     *
+     * <p>The application name is read from the {@code APPLICATION_NAME}
+     * environment variable, which is automatically set by Managed Flink.
+     *
+     * @return map of property group ID to property key-value pairs
      */
-    static String getRequiredEnv(String name) {
-        String value = System.getenv(name);
+    static Map<String, Map<String, String>> getApplicationProperties() {
+        String appName = System.getenv("APPLICATION_NAME");
+        if (appName == null || appName.isBlank()) {
+            LOG.warn("APPLICATION_NAME not set (local mode). Using empty properties.");
+            return Map.of();
+        }
+
+        LOG.info("Fetching runtime properties for application: {}", appName);
+
+        try (KinesisAnalyticsV2Client client = KinesisAnalyticsV2Client.create()) {
+            DescribeApplicationResponse response = client.describeApplication(
+                    DescribeApplicationRequest.builder()
+                            .applicationName(appName)
+                            .build());
+
+            List<PropertyGroup> groups = response.applicationDetail()
+                    .applicationConfigurationDescription()
+                    .environmentPropertyDescriptions()
+                    .propertyGroupDescriptions();
+
+            Map<String, Map<String, String>> result = new HashMap<>();
+            for (PropertyGroup group : groups) {
+                result.put(group.propertyGroupId(), group.propertyMap());
+                LOG.info("Loaded property group '{}' with {} properties",
+                        group.propertyGroupId(), group.propertyMap().size());
+            }
+            return result;
+        }
+    }
+
+    /**
+     * Gets a property group by ID, throwing if not found.
+     */
+    static Map<String, String> getPropertyGroup(Map<String, Map<String, String>> appProperties, String groupId) {
+        Map<String, String> props = appProperties.get(groupId);
+        if (props == null) {
+            throw new IllegalStateException(
+                    "Missing required property group '" + groupId + "'. "
+                    + "Configure it in the Flink application's environment_properties.");
+        }
+        return props;
+    }
+
+    /**
+     * Gets a required property value, throwing if missing or blank.
+     */
+    static String getRequiredProperty(Map<String, String> props, String key) {
+        String value = props.get(key);
         if (value == null || value.isBlank()) {
             throw new IllegalStateException(
-                    "Required environment variable '" + name + "' is not set or is blank");
+                    "Missing required property '" + key + "'. "
+                    + "Configure it in the Flink application's environment_properties.");
         }
         return value;
     }

@@ -1,7 +1,27 @@
 package org.muralis.datahose.sink;
 
+import org.apache.avro.generic.GenericRecord;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.iceberg.CatalogProperties;
+import org.apache.iceberg.CatalogUtil;
+import org.apache.iceberg.DataFile;
+import org.apache.iceberg.DataFiles;
+import org.apache.iceberg.FileFormat;
+import org.apache.iceberg.Schema;
+import org.apache.iceberg.Table;
+import org.apache.iceberg.aws.glue.GlueCatalog;
+import org.apache.iceberg.aws.s3.S3FileIO;
+import org.apache.iceberg.catalog.Catalog;
+import org.apache.iceberg.catalog.Namespace;
+import org.apache.iceberg.catalog.TableIdentifier;
+import org.apache.iceberg.data.GenericAppenderFactory;
+import org.apache.iceberg.exceptions.NoSuchTableException;
+import org.apache.iceberg.io.FileAppender;
+import org.apache.iceberg.io.OutputFile;
 import org.jetbrains.annotations.NotNull;
 import org.muralis.datahose.model.ProcessedRecord;
+import org.muralis.datahose.model.TemperatureSummary;
+import org.muralis.datahose.processing.TemperatureSummaryAvroMapper;
 import org.apache.flink.api.connector.sink2.Sink;
 import org.apache.flink.api.connector.sink2.SinkWriter;
 import org.apache.flink.api.connector.sink2.WriterInitContext;
@@ -11,9 +31,11 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.Serial;
 import java.io.Serializable;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 
 /**
  * Flink Sink V2 implementation that writes processed records to Apache Iceberg tables
@@ -70,10 +92,12 @@ public class IcebergSink implements Sink<ProcessedRecord> {
 
         private final IcebergConfig config;
         private final IcebergTableWriter tableWriter;
+        private final TemperatureSummaryAvroMapper avroMapper;
 
         IcebergSinkWriter(IcebergConfig config, IcebergTableWriter tableWriter) {
             this.config = config;
             this.tableWriter = tableWriter;
+            this.avroMapper = new TemperatureSummaryAvroMapper();
             LOG.info("IcebergSinkWriter opened with catalog='{}', warehouse='{}', table='{}'",
                     config.catalogName(), config.warehousePath(), config.tableName());
         }
@@ -83,15 +107,15 @@ public class IcebergSink implements Sink<ProcessedRecord> {
                 throws IOException, InterruptedException {
 
             if (ProcessedRecord.STATUS_FAILURE.equals(record.getStatus())) {
-                LOG.debug("Skipping FAILURE record for s3://{}/{}",
+                LOG.debug("Skipping FAILURE record for {}/{}",
                         record.getSourceNotification().getBucketUrl(),
                         record.getSourceNotification().getObjectName());
                 return;
             }
 
-            List<Map<String, String>> rows = record.getRows();
+            List<TemperatureSummary> rows = record.getRecords();
             if (rows.isEmpty()) {
-                LOG.debug("Skipping record with no rows for s3://{}/{}",
+                LOG.debug("Skipping record with no rows for {}/{}",
                         record.getSourceNotification().getBucketUrl(),
                         record.getSourceNotification().getObjectName());
                 return;
@@ -124,11 +148,16 @@ public class IcebergSink implements Sink<ProcessedRecord> {
 
             for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
                 try {
-                    tableWriter.write(config.tableName(), record.getRows());
+                    List<GenericRecord> avroRecords = avroMapper.toAvroRecords(record.getRecords());
+                    tableWriter.write(config.tableName(), avroRecords);
                     LOG.info("Successfully wrote {} rows from {} to Iceberg table '{}'",
-                            record.getRows().size(), sourceRef, config.tableName());
+                            record.getRecords().size(), sourceRef, config.tableName());
                     return;
                 } catch (Exception e) {
+                    if (e instanceof NoSuchTableException) {
+                        throw new IOException("Iceberg table '" + config.tableName()
+                                + "' does not exist. Provision it via Terraform before starting the application.", e);
+                    }
                     lastException = e;
                     if (attempt < MAX_RETRIES - 1) {
                         long delay = RETRY_DELAYS_MS[attempt];
@@ -164,10 +193,10 @@ public class IcebergSink implements Sink<ProcessedRecord> {
          * Writes a batch of rows to the specified Iceberg table.
          *
          * @param tableName the target Iceberg table name
-         * @param rows      list of row maps (column-name → value)
+         * @param rows      list of canonical Avro records
          * @throws Exception on write failure
          */
-        void write(String tableName, List<Map<String, String>> rows) throws Exception;
+        void write(String tableName, List<GenericRecord> rows) throws Exception;
     }
 
     /**
@@ -213,47 +242,91 @@ public class IcebergSink implements Sink<ProcessedRecord> {
     /**
      * Default Iceberg table writer that interacts with an Apache Iceberg catalog.
      *
-     * <p>In a full deployment this would use the Iceberg API to load a catalog,
-     * resolve the table, and append data files. The structure is in place for
-     * integration once a running Iceberg catalog (e.g., Glue, Hive, REST) is available.
+    * <p>This implementation loads a Glue-backed Iceberg catalog using the configured
+    * warehouse path and writes Avro data files through Iceberg's S3 file IO.
      */
     static class DefaultIcebergTableWriter implements IcebergTableWriter {
 
         private static final Logger LOG = LoggerFactory.getLogger(DefaultIcebergTableWriter.class);
 
-        private final IcebergConfig config;
+        private final Catalog catalog;
 
         DefaultIcebergTableWriter(IcebergConfig config) {
-            this.config = config;
+            this.catalog = createCatalog(config);
         }
 
         @Override
-        public void write(String tableName, List<Map<String, String>> rows) throws Exception {
-            // TODO: Replace with actual Iceberg catalog interaction:
-            //   1. Load catalog using config.warehousePath and config.catalogName
-            //   2. Load table by tableName
-            //   3. Convert rows (Map<String, String>) to Iceberg GenericRecord using table schema
-            //   4. Append records via table.newAppend()
-            //
-            // Example (pseudo-code):
-            //   HadoopCatalog catalog = new HadoopCatalog(conf, config.getWarehousePath());
-            //   Table table = catalog.loadTable(TableIdentifier.parse(tableName));
-            //   DataWriter<Record> writer = ...;
-            //   for (Map<String, String> row : rows) {
-            //       GenericRecord record = GenericRecord.create(table.schema());
-            //       row.forEach(record::set);
-            //       writer.write(record);
-            //   }
-            //   writer.close();
-            //   table.newAppend().appendFile(writer.toDataFile()).commit();
+        public void write(String tableName, List<GenericRecord> rows) throws Exception {
+            if (rows.isEmpty()) {
+                return;
+            }
 
-            LOG.info("Writing {} rows to Iceberg table '{}' (catalog='{}', warehouse='{}')",
-                    rows.size(), tableName, config.catalogName(), config.warehousePath());
+            TableIdentifier identifier = parseIdentifier(tableName);
+            Table table = catalog.loadTable(identifier);
+
+            String dataPath = table.location() + "/data/" + UUID.randomUUID() + ".avro";
+            OutputFile outputFile = table.io().newOutputFile(dataPath);
+            GenericAppenderFactory appenderFactory = new GenericAppenderFactory(table.schema());
+
+            long recordCount = 0L;
+            long fileSize;
+
+            try (FileAppender<org.apache.iceberg.data.Record> appender =
+                         appenderFactory.newAppender(outputFile, FileFormat.AVRO)) {
+                for (GenericRecord row : rows) {
+                    appender.add(toIcebergRecord(table.schema(), row));
+                    recordCount++;
+                }
+                fileSize = appender.length();
+            }
+
+            DataFile dataFile = DataFiles.builder(table.spec())
+                    .withPath(outputFile.location())
+                    .withFormat(FileFormat.AVRO)
+                    .withRecordCount(recordCount)
+                    .withFileSizeInBytes(fileSize)
+                    .build();
+
+            table.newAppend().appendFile(dataFile).commit();
+            LOG.info("Appended {} rows to Iceberg table '{}' via {}",
+                    recordCount, tableName, outputFile.location());
         }
 
         @Override
-        public void close() {
+        public void close() throws IOException {
+            if (catalog instanceof AutoCloseable closable) {
+                try {
+                    closable.close();
+                } catch (Exception e) {
+                    throw new IOException("Failed closing Iceberg catalog", e);
+                }
+            }
             LOG.info("DefaultIcebergTableWriter closed");
+        }
+
+        private Catalog createCatalog(IcebergConfig config) {
+            Map<String, String> properties = new HashMap<>();
+            properties.put(CatalogProperties.WAREHOUSE_LOCATION, config.warehousePath());
+            properties.put(CatalogProperties.FILE_IO_IMPL, S3FileIO.class.getName());
+
+            return CatalogUtil.loadCatalog(
+                    config.catalogName(),
+                    GlueCatalog.class.getName(),
+                    properties,
+                    new Configuration());
+        }
+
+        private TableIdentifier parseIdentifier(String tableName) {
+            if (tableName.contains(".")) {
+                return TableIdentifier.parse(tableName);
+            }
+            return TableIdentifier.of(Namespace.of("default"), tableName);
+        }
+
+        private org.apache.iceberg.data.Record toIcebergRecord(Schema schema, GenericRecord avroRecord) {
+            org.apache.iceberg.data.GenericRecord icebergRecord = org.apache.iceberg.data.GenericRecord.create(schema);
+            schema.columns().forEach(field -> icebergRecord.setField(field.name(), avroRecord.get(field.name())));
+            return icebergRecord;
         }
     }
 }

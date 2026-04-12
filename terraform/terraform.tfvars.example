@@ -1,11 +1,36 @@
 # Flink Data Pipeline - Example Variable Values
 # Copy this file to terraform.tfvars and fill in your values.
 
-environment         = "dev"
-aws_region          = "us-east-1"
-vpc_cidr            = "10.0.0.0/16"
-db_instance_class   = "db.r6g.large"
+# --- Project ---
+project_name = "flink-data-pipeline"
+environment  = "dev"
+aws_region   = "us-east-1"
+
+# --- Networking ---
+vpc_cidr = "10.0.0.0/16"
+log_retention_days = 1
+enable_cloudwatch_logs_kms = false
+enable_vpc_flow_logs = false
+
+# --- Kinesis ---
 kinesis_shard_count = 1
-github_repo         = "your-org/your-repo"
-github_branch       = "main"
-file_key            = "jars/my-app-latest.jar"
+# kinesis_stream_name = ""  # Defaults to ${project_name}-${environment}
+
+# --- S3 Buckets (all optional — defaults to ${project_name}-${environment}-<suffix>) ---
+# input_bucket_name              = ""
+# iceberg_bucket_name            = ""
+# jar_bucket_name                = ""
+# pipeline_artifacts_bucket_name = ""
+
+# --- Iceberg / Glue ---
+iceberg_database_name = "flink_pipeline"
+iceberg_table_name    = "temperature"
+iceberg_catalog_name  = "glue_catalog"
+
+# --- CI/CD ---
+github_repo   = "your-org/your-repo"
+github_branch = "main"
+
+# --- Flink Application ---
+file_key = "jars/my-app-latest.jar"
+

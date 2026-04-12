@@ -1,5 +1,6 @@
 package org.muralis.datahose.processing;
 
+import org.muralis.datahose.model.FileFormat;
 import org.muralis.datahose.model.S3FileContent;
 import org.muralis.datahose.model.S3Notification;
 import org.apache.flink.api.common.functions.OpenContext;
@@ -66,7 +67,8 @@ public class S3FileReader extends RichFlatMapFunction<S3Notification, S3FileCont
 
         try {
             byte[] content = readWithRetry(bucketName, objectKey);
-            out.collect(new S3FileContent(notification, content));
+            FileFormat format = FileFormatDetector.detect(notification, content);
+            out.collect(new S3FileContent(notification, content, format));
         } catch (NoSuchKeyException e) {
             LOG.error("S3 object not found: s3://{}/{}. Skipping.", bucketName, objectKey, e);
             // No output emitted — TransactionLogger handles FAILURE recording separately
@@ -127,6 +129,10 @@ public class S3FileReader extends RichFlatMapFunction<S3Notification, S3FileCont
             name = name.substring(0, name.length() - 1);
         }
         return name;
+    }
+
+    static FileFormat detectFormat(S3Notification notification, byte[] content) {
+        return FileFormatDetector.detect(notification, content);
     }
 
     /** Sleeps for the given duration; extracted for testability. */

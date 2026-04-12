@@ -1,0 +1,102 @@
+[
+    {
+        "date": "2024-07-01",
+        "city": "New York City",
+        "temperature": 84
+    },
+    {
+        "date": "2024-07-01",
+        "city": "Los Angeles",
+        "temperature": 78
+    },
+    {
+        "date": "2024-07-01",
+        "city": "Chicago",
+        "temperature": 82
+    },
+    {
+        "date": "2024-07-01",
+        "city": "Cincinatti",
+        "temperature": 96
+    },
+    {
+        "date": "2024-07-01",
+        "city": "Houston",
+        "temperature": 93
+    },
+    {
+        "date": "2024-07-02",
+        "city": "Phoenix",
+        "temperature": 109
+    },
+    {
+        "date": "2024-07-02",
+        "city": "Philadelphia",
+        "temperature": 81
+    },
+    {
+        "date": "2024-07-02",
+        "city": "San Antonio",
+        "temperature": 94
+    },
+    {
+        "date": "2024-07-02",
+        "city": "San Diego",
+        "temperature": 75
+    },
+    {
+        "date": "2024-07-02",
+        "city": "Atlanta",
+        "temperature": 88
+    },
+    {
+        "date": "2024-07-03",
+        "city": "Baltimore",
+        "temperature": 86
+    },
+    {
+        "date": "2024-07-03",
+        "city": "Denver",
+        "temperature": 84
+    },
+    {
+        "date": "2024-07-03",
+        "city": "Orlando",
+        "temperature": 90
+    },
+    {
+        "date": "2024-07-03",
+        "city": "Seattle",
+        "temperature": 73
+    },
+    {
+        "date": "2024-07-03",
+        "city": "Boston",
+        "temperature": 79
+    },
+    {
+        "date": "2024-07-04",
+        "city": "Nashville",
+        "temperature": 68
+    },
+    {
+        "date": "2024-07-04",
+        "city": "Detroit",
+        "temperature": 80
+    },
+    {
+        "date": "2024-07-04",
+        "city": "San Jose",
+        "temperature": 92
+    },
+    {
+        "date": "2024-07-04",
+        "city": "Providence",
+        "temperature": 77
+    },
+    {
+        "date": "2024-07-04",
+        "city": "Miami",
+        "temperature": 91
+    }
+]

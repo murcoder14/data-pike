@@ -2,6 +2,7 @@ package org.muralis.datahose.source;
 
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.connector.aws.config.AWSConfigOptions;
 import org.apache.flink.connector.kinesis.source.KinesisStreamsSource;
 import org.apache.flink.connector.kinesis.source.config.KinesisSourceConfigOptions;
 import org.slf4j.Logger;
@@ -38,6 +39,7 @@ public final class KinesisMessageSource {
 
         Configuration sourceConfig = new Configuration();
         sourceConfig.set(KinesisSourceConfigOptions.STREAM_INITIAL_POSITION, initialPosition);
+        sourceConfig.set(AWSConfigOptions.AWS_REGION_OPTION, awsRegion);
 
         return KinesisStreamsSource.<String>builder()
                 .setStreamArn(streamArn)

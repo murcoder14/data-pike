@@ -1,0 +1,103 @@
+<?xml version="1.0" ?>
+<WeatherObservations>
+  <Observation>
+    <Date>2025-07-01</Date>
+    <City>New York City</City>
+    <Temperature unit="Fahrenheit">84</Temperature>
+  </Observation>
+  <Observation>
+    <Date>2025-07-01</Date>
+    <City>Los Angeles</City>
+    <Temperature unit="Fahrenheit">78</Temperature>
+  </Observation>
+  <Observation>
+    <Date>2025-07-01</Date>
+    <City>Chicago</City>
+    <Temperature unit="Fahrenheit">82</Temperature>
+  </Observation>
+  <Observation>
+    <Date>2025-07-01</Date>
+    <City>Dallas-Fort Worth</City>
+    <Temperature unit="Fahrenheit">96</Temperature>
+  </Observation>
+  <Observation>
+    <Date>2025-07-01</Date>
+    <City>Houston</City>
+    <Temperature unit="Fahrenheit">93</Temperature>
+  </Observation>
+  <Observation>
+    <Date>2025-07-02</Date>
+    <City>Phoenix</City>
+    <Temperature unit="Fahrenheit">109</Temperature>
+  </Observation>
+  <Observation>
+    <Date>2025-07-02</Date>
+    <City>Philadelphia</City>
+    <Temperature unit="Fahrenheit">81</Temperature>
+  </Observation>
+  <Observation>
+    <Date>2025-07-02</Date>
+    <City>San Antonio</City>
+    <Temperature unit="Fahrenheit">94</Temperature>
+  </Observation>
+  <Observation>
+    <Date>2025-07-02</Date>
+    <City>San Diego</City>
+    <Temperature unit="Fahrenheit">75</Temperature>
+  </Observation>
+  <Observation>
+    <Date>2025-07-02</Date>
+    <City>Atlanta</City>
+    <Temperature unit="Fahrenheit">88</Temperature>
+  </Observation>
+  <Observation>
+    <Date>2025-07-03</Date>
+    <City>Charlotte</City>
+    <Temperature unit="Fahrenheit">86</Temperature>
+  </Observation>
+  <Observation>
+    <Date>2025-07-03</Date>
+    <City>Denver</City>
+    <Temperature unit="Fahrenheit">84</Temperature>
+  </Observation>
+  <Observation>
+    <Date>2025-07-03</Date>
+    <City>Orlando</City>
+    <Temperature unit="Fahrenheit">90</Temperature>
+  </Observation>
+  <Observation>
+    <Date>2025-07-03</Date>
+    <City>Seattle</City>
+    <Temperature unit="Fahrenheit">73</Temperature>
+  </Observation>
+  <Observation>
+    <Date>2025-07-03</Date>
+    <City>Boston</City>
+    <Temperature unit="Fahrenheit">79</Temperature>
+  </Observation>
+  <Observation>
+    <Date>2025-07-04</Date>
+    <City>San Jose</City>
+    <Temperature unit="Fahrenheit">68</Temperature>
+  </Observation>
+  <Observation>
+    <Date>2025-07-04</Date>
+    <City>Detroit</City>
+    <Temperature unit="Fahrenheit">80</Temperature>
+  </Observation>
+  <Observation>
+    <Date>2025-07-04</Date>
+    <City>Nashville</City>
+    <Temperature unit="Fahrenheit">92</Temperature>
+  </Observation>
+  <Observation>
+    <Date>2025-07-04</Date>
+    <City>Orlando</City>
+    <Temperature unit="Fahrenheit">77</Temperature>
+  </Observation>
+  <Observation>
+    <Date>2025-07-04</Date>
+    <City>Nashua</City>
+    <Temperature unit="Fahrenheit">91</Temperature>
+  </Observation>
+</WeatherObservations>

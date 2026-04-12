@@ -9,7 +9,10 @@ data "aws_region" "current" {}
 
 locals {
   account_id = data.aws_caller_identity.current.account_id
-  region     = data.aws_region.current.name
+  region     = data.aws_region.current.id
+
+  terraform_state_bucket_name = replace(var.terraform_state_bucket_arn, "arn:aws:s3:::", "")
+  terraform_lock_table_name   = split("/", var.terraform_lock_table_arn)[1]
 }
 
 # =============================================================================
@@ -17,7 +20,7 @@ locals {
 # =============================================================================
 
 resource "aws_iam_role" "codebuild_build" {
-  name = "flink-data-pipeline-${var.environment}-codebuild-build"
+  name = "${var.project_name}-${var.environment}-codebuild-build"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -38,9 +41,9 @@ resource "aws_iam_role" "codebuild_build" {
   })
 
   tags = {
-    Name        = "flink-data-pipeline-${var.environment}-codebuild-build"
+    Name        = "${var.project_name}-${var.environment}-codebuild-build"
     Environment = var.environment
-    Application = "flink-data-pipeline"
+    Application = var.project_name
   }
 }
 
@@ -136,7 +139,7 @@ resource "aws_iam_role_policy" "build_codebuild" {
           "codebuild:BatchPutTestCases",
           "codebuild:BatchPutCodeCoverages"
         ]
-        Resource = "arn:aws:codebuild:${local.region}:${local.account_id}:report-group/flink-data-pipeline-${var.environment}-build-*"
+        Resource = "arn:aws:codebuild:${local.region}:${local.account_id}:report-group/${var.project_name}-${var.environment}-build-*"
       }
     ]
   })
@@ -147,7 +150,7 @@ resource "aws_iam_role_policy" "build_codebuild" {
 # =============================================================================
 
 resource "aws_iam_role" "codebuild_plan" {
-  name = "flink-data-pipeline-${var.environment}-codebuild-plan"
+  name = "${var.project_name}-${var.environment}-codebuild-plan"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -168,9 +171,9 @@ resource "aws_iam_role" "codebuild_plan" {
   })
 
   tags = {
-    Name        = "flink-data-pipeline-${var.environment}-codebuild-plan"
+    Name        = "${var.project_name}-${var.environment}-codebuild-plan"
     Environment = var.environment
-    Application = "flink-data-pipeline"
+    Application = var.project_name
   }
 }
 
@@ -305,10 +308,10 @@ resource "aws_iam_role_policy" "plan_readonly" {
           "rds:ListTagsForResource"
         ]
         Resource = [
-          "arn:aws:rds:${local.region}:${local.account_id}:db:flink-data-pipeline-${var.environment}",
+          "arn:aws:rds:${local.region}:${local.account_id}:db:${var.project_name}-${var.environment}",
           "arn:aws:rds:${local.region}:${local.account_id}:db-proxy:*",
-          "arn:aws:rds:${local.region}:${local.account_id}:subgrp:flink-data-pipeline-${var.environment}-*",
-          "arn:aws:rds:${local.region}:${local.account_id}:pg:flink-data-pipeline-${var.environment}-*"
+          "arn:aws:rds:${local.region}:${local.account_id}:subgrp:${var.project_name}-${var.environment}-*",
+          "arn:aws:rds:${local.region}:${local.account_id}:pg:${var.project_name}-${var.environment}-*"
         ]
       },
       {
@@ -338,8 +341,8 @@ resource "aws_iam_role_policy" "plan_readonly" {
           "iam:GetPolicyVersion"
         ]
         Resource = [
-          "arn:aws:iam::${local.account_id}:role/flink-data-pipeline-${var.environment}-*",
-          "arn:aws:iam::${local.account_id}:policy/flink-data-pipeline-${var.environment}-*"
+          "arn:aws:iam::${local.account_id}:role/${var.project_name}-${var.environment}-*",
+          "arn:aws:iam::${local.account_id}:policy/${var.project_name}-${var.environment}-*"
         ]
       },
       {
@@ -374,7 +377,7 @@ resource "aws_iam_role_policy" "plan_readonly" {
           "secretsmanager:DescribeSecret",
           "secretsmanager:GetResourcePolicy"
         ]
-        Resource = "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:flink-data-pipeline-${var.environment}-*"
+        Resource = "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:${var.project_name}-${var.environment}-*"
       },
       {
         Sid    = "EventBridgeDescribe"
@@ -384,16 +387,16 @@ resource "aws_iam_role_policy" "plan_readonly" {
           "events:ListTargetsByRule",
           "events:ListTagsForResource"
         ]
-        Resource = "arn:aws:events:${local.region}:${local.account_id}:rule/flink-data-pipeline-${var.environment}-*"
+        Resource = "arn:aws:events:${local.region}:${local.account_id}:rule/${var.project_name}-${var.environment}-*"
       },
       {
         Sid    = "KinesisAnalyticsDescribe"
         Effect = "Allow"
         Action = [
-          "kinesisanalytics:DescribeApplication",
-          "kinesisanalytics:ListTagsForResource"
+          "kinesisanalyticsv2:DescribeApplication",
+          "kinesisanalyticsv2:ListTagsForResource"
         ]
-        Resource = "arn:aws:kinesisanalytics:${local.region}:${local.account_id}:application/flink-data-pipeline-${var.environment}"
+        Resource = "arn:aws:kinesisanalytics:${local.region}:${local.account_id}:application/${var.project_name}-${var.environment}"
       },
       {
         Sid    = "DynamoDBDescribe"
@@ -448,7 +451,7 @@ resource "aws_iam_role_policy" "plan_codebuild" {
           "codebuild:BatchPutTestCases",
           "codebuild:BatchPutCodeCoverages"
         ]
-        Resource = "arn:aws:codebuild:${local.region}:${local.account_id}:report-group/flink-data-pipeline-${var.environment}-plan-*"
+        Resource = "arn:aws:codebuild:${local.region}:${local.account_id}:report-group/${var.project_name}-${var.environment}-plan-*"
       }
     ]
   })
@@ -459,7 +462,7 @@ resource "aws_iam_role_policy" "plan_codebuild" {
 # =============================================================================
 
 resource "aws_iam_role" "codebuild_apply" {
-  name = "flink-data-pipeline-${var.environment}-codebuild-apply"
+  name = "${var.project_name}-${var.environment}-codebuild-apply"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -480,9 +483,9 @@ resource "aws_iam_role" "codebuild_apply" {
   })
 
   tags = {
-    Name        = "flink-data-pipeline-${var.environment}-codebuild-apply"
+    Name        = "${var.project_name}-${var.environment}-codebuild-apply"
     Environment = var.environment
-    Application = "flink-data-pipeline"
+    Application = var.project_name
   }
 }
 
@@ -668,10 +671,10 @@ resource "aws_iam_role_policy" "apply_resource_management" {
           "rds:ListTagsForResource"
         ]
         Resource = [
-          "arn:aws:rds:${local.region}:${local.account_id}:db:flink-data-pipeline-${var.environment}*",
+          "arn:aws:rds:${local.region}:${local.account_id}:db:${var.project_name}-${var.environment}*",
           "arn:aws:rds:${local.region}:${local.account_id}:db-proxy:*",
-          "arn:aws:rds:${local.region}:${local.account_id}:subgrp:flink-data-pipeline-${var.environment}-*",
-          "arn:aws:rds:${local.region}:${local.account_id}:pg:flink-data-pipeline-${var.environment}-*"
+          "arn:aws:rds:${local.region}:${local.account_id}:subgrp:${var.project_name}-${var.environment}-*",
+          "arn:aws:rds:${local.region}:${local.account_id}:pg:${var.project_name}-${var.environment}-*"
         ]
       },
       {
@@ -745,9 +748,9 @@ resource "aws_iam_role_policy" "apply_resource_management" {
           "iam:ListInstanceProfilesForRole"
         ]
         Resource = [
-          "arn:aws:iam::${local.account_id}:role/flink-data-pipeline-${var.environment}-*",
-          "arn:aws:iam::${local.account_id}:policy/flink-data-pipeline-${var.environment}-*",
-          "arn:aws:iam::${local.account_id}:instance-profile/flink-data-pipeline-${var.environment}-*"
+          "arn:aws:iam::${local.account_id}:role/${var.project_name}-${var.environment}-*",
+          "arn:aws:iam::${local.account_id}:policy/${var.project_name}-${var.environment}-*",
+          "arn:aws:iam::${local.account_id}:instance-profile/${var.project_name}-${var.environment}-*"
         ]
       },
       {
@@ -800,7 +803,7 @@ resource "aws_iam_role_policy" "apply_resource_management" {
           "secretsmanager:DeleteResourcePolicy",
           "secretsmanager:RotateSecret"
         ]
-        Resource = "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:flink-data-pipeline-${var.environment}-*"
+        Resource = "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:${var.project_name}-${var.environment}-*"
       },
       {
         Sid    = "EventBridgeManagement"
@@ -818,27 +821,27 @@ resource "aws_iam_role_policy" "apply_resource_management" {
           "events:UntagResource",
           "events:ListTagsForResource"
         ]
-        Resource = "arn:aws:events:${local.region}:${local.account_id}:rule/flink-data-pipeline-${var.environment}-*"
+        Resource = "arn:aws:events:${local.region}:${local.account_id}:rule/${var.project_name}-${var.environment}-*"
       },
       {
         Sid    = "KinesisAnalyticsManagement"
         Effect = "Allow"
         Action = [
-          "kinesisanalytics:CreateApplication",
-          "kinesisanalytics:DeleteApplication",
-          "kinesisanalytics:UpdateApplication",
-          "kinesisanalytics:DescribeApplication",
-          "kinesisanalytics:StartApplication",
-          "kinesisanalytics:StopApplication",
-          "kinesisanalytics:AddApplicationVpcConfiguration",
-          "kinesisanalytics:DeleteApplicationVpcConfiguration",
-          "kinesisanalytics:AddApplicationCloudWatchLoggingOption",
-          "kinesisanalytics:DeleteApplicationCloudWatchLoggingOption",
-          "kinesisanalytics:TagResource",
-          "kinesisanalytics:UntagResource",
-          "kinesisanalytics:ListTagsForResource"
+          "kinesisanalyticsv2:CreateApplication",
+          "kinesisanalyticsv2:DeleteApplication",
+          "kinesisanalyticsv2:UpdateApplication",
+          "kinesisanalyticsv2:DescribeApplication",
+          "kinesisanalyticsv2:StartApplication",
+          "kinesisanalyticsv2:StopApplication",
+          "kinesisanalyticsv2:AddApplicationVpcConfiguration",
+          "kinesisanalyticsv2:DeleteApplicationVpcConfiguration",
+          "kinesisanalyticsv2:AddApplicationCloudWatchLoggingOption",
+          "kinesisanalyticsv2:DeleteApplicationCloudWatchLoggingOption",
+          "kinesisanalyticsv2:TagResource",
+          "kinesisanalyticsv2:UntagResource",
+          "kinesisanalyticsv2:ListTagsForResource"
         ]
-        Resource = "arn:aws:kinesisanalytics:${local.region}:${local.account_id}:application/flink-data-pipeline-${var.environment}"
+        Resource = "arn:aws:kinesisanalytics:${local.region}:${local.account_id}:application/${var.project_name}-${var.environment}"
       },
       {
         Sid    = "DynamoDBManagement"
@@ -879,7 +882,7 @@ resource "aws_iam_role_policy" "apply_codebuild" {
           "codebuild:BatchPutTestCases",
           "codebuild:BatchPutCodeCoverages"
         ]
-        Resource = "arn:aws:codebuild:${local.region}:${local.account_id}:report-group/flink-data-pipeline-${var.environment}-apply-*"
+        Resource = "arn:aws:codebuild:${local.region}:${local.account_id}:report-group/${var.project_name}-${var.environment}-apply-*"
       }
     ]
   })
@@ -890,7 +893,7 @@ resource "aws_iam_role_policy" "apply_codebuild" {
 # =============================================================================
 
 resource "aws_codebuild_project" "build" {
-  name          = "flink-data-pipeline-${var.environment}-build"
+  name          = "${var.project_name}-${var.environment}-build"
   description   = "Build Stage: Maven compile + Shade plugin to produce FAT JAR, upload to JAR bucket"
   service_role  = aws_iam_role.codebuild_build.arn
   build_timeout = 30
@@ -908,6 +911,11 @@ resource "aws_codebuild_project" "build" {
     environment_variable {
       name  = "JAR_BUCKET"
       value = var.jar_bucket_id
+    }
+
+    environment_variable {
+      name  = "FILE_KEY"
+      value = var.file_key
     }
   }
 
@@ -932,8 +940,9 @@ resource "aws_codebuild_project" "build" {
             - echo "Uploading FAT JAR to S3..."
             - export COMMIT_HASH=$${CODEBUILD_RESOLVED_SOURCE_VERSION}
             - export JAR_FILE=$$(find target -name "*.jar" -not -name "original-*" | head -1)
+            - aws s3 cp $${JAR_FILE} s3://$${JAR_BUCKET}/$${FILE_KEY}
             - aws s3 cp $${JAR_FILE} s3://$${JAR_BUCKET}/jars/my-app-$${COMMIT_HASH}.jar
-            - echo "Uploaded jars/my-app-$${COMMIT_HASH}.jar to $${JAR_BUCKET}"
+            - echo "Uploaded $${FILE_KEY} and jars/my-app-$${COMMIT_HASH}.jar to $${JAR_BUCKET}"
     BUILDSPEC
   }
 
@@ -945,9 +954,9 @@ resource "aws_codebuild_project" "build" {
   }
 
   tags = {
-    Name        = "flink-data-pipeline-${var.environment}-build"
+    Name        = "${var.project_name}-${var.environment}-build"
     Environment = var.environment
-    Application = "flink-data-pipeline"
+    Application = var.project_name
   }
 }
 
@@ -956,7 +965,7 @@ resource "aws_codebuild_project" "build" {
 # =============================================================================
 
 resource "aws_codebuild_project" "plan" {
-  name          = "flink-data-pipeline-${var.environment}-plan"
+  name          = "${var.project_name}-${var.environment}-plan"
   description   = "Plan Stage: Run terraform plan detecting file_key variable change, output plan binary"
   service_role  = aws_iam_role.codebuild_plan.arn
   build_timeout = 30
@@ -990,6 +999,26 @@ resource "aws_codebuild_project" "plan" {
       name  = "TF_VAR_github_branch"
       value = var.github_branch
     }
+
+    environment_variable {
+      name  = "TF_STATE_BUCKET"
+      value = local.terraform_state_bucket_name
+    }
+
+    environment_variable {
+      name  = "TF_LOCK_TABLE"
+      value = local.terraform_lock_table_name
+    }
+
+    environment_variable {
+      name  = "TF_STATE_KEY"
+      value = "${var.project_name}/${var.environment}/terraform.tfstate"
+    }
+
+    environment_variable {
+      name  = "TF_STATE_REGION"
+      value = local.region
+    }
   }
 
   source {
@@ -1001,14 +1030,19 @@ resource "aws_codebuild_project" "plan" {
         install:
           commands:
             - echo "Installing Terraform..."
-            - curl -fsSL https://releases.hashicorp.com/terraform/1.5.7/terraform_1.5.7_linux_amd64.zip -o terraform.zip
+            - export TF_VERSION=1.14.8
+            - export TF_ZIP=terraform_$${TF_VERSION}_linux_amd64.zip
+            - curl -fsSLO https://releases.hashicorp.com/terraform/$${TF_VERSION}/$${TF_ZIP}
+            - curl -fsSLO https://releases.hashicorp.com/terraform/$${TF_VERSION}/terraform_$${TF_VERSION}_SHA256SUMS
+            - grep " $${TF_ZIP}$$" terraform_$${TF_VERSION}_SHA256SUMS > terraform_SHA256SUMS_linux_amd64
+            - sha256sum -c terraform_SHA256SUMS_linux_amd64
             - unzip -o terraform.zip -d /usr/local/bin/
             - terraform --version
         pre_build:
           commands:
             - echo "Initializing Terraform..."
             - cd terraform
-            - terraform init -input=false
+            - terraform init -input=false -backend-config="bucket=$${TF_STATE_BUCKET}" -backend-config="key=$${TF_STATE_KEY}" -backend-config="region=$${TF_STATE_REGION}" -backend-config="use_lockfile=true" -backend-config="encrypt=true"
         build:
           commands:
             - echo "Running terraform plan with file_key=$TF_VAR_file_key..."
@@ -1031,9 +1065,9 @@ resource "aws_codebuild_project" "plan" {
   }
 
   tags = {
-    Name        = "flink-data-pipeline-${var.environment}-plan"
+    Name        = "${var.project_name}-${var.environment}-plan"
     Environment = var.environment
-    Application = "flink-data-pipeline"
+    Application = var.project_name
   }
 }
 
@@ -1042,7 +1076,7 @@ resource "aws_codebuild_project" "plan" {
 # =============================================================================
 
 resource "aws_codebuild_project" "apply" {
-  name          = "flink-data-pipeline-${var.environment}-apply"
+  name          = "${var.project_name}-${var.environment}-apply"
   description   = "Apply Stage: Run terraform apply using pre-generated plan binary from Plan stage"
   service_role  = aws_iam_role.codebuild_apply.arn
   build_timeout = 30
@@ -1076,6 +1110,26 @@ resource "aws_codebuild_project" "apply" {
       name  = "TF_VAR_github_branch"
       value = var.github_branch
     }
+
+    environment_variable {
+      name  = "TF_STATE_BUCKET"
+      value = local.terraform_state_bucket_name
+    }
+
+    environment_variable {
+      name  = "TF_LOCK_TABLE"
+      value = local.terraform_lock_table_name
+    }
+
+    environment_variable {
+      name  = "TF_STATE_KEY"
+      value = "${var.project_name}/${var.environment}/terraform.tfstate"
+    }
+
+    environment_variable {
+      name  = "TF_STATE_REGION"
+      value = local.region
+    }
   }
 
   source {
@@ -1087,14 +1141,19 @@ resource "aws_codebuild_project" "apply" {
         install:
           commands:
             - echo "Installing Terraform..."
-            - curl -fsSL https://releases.hashicorp.com/terraform/1.5.7/terraform_1.5.7_linux_amd64.zip -o terraform.zip
+            - export TF_VERSION=1.14.8
+            - export TF_ZIP=terraform_$${TF_VERSION}_linux_amd64.zip
+            - curl -fsSLO https://releases.hashicorp.com/terraform/$${TF_VERSION}/$${TF_ZIP}
+            - curl -fsSLO https://releases.hashicorp.com/terraform/$${TF_VERSION}/terraform_$${TF_VERSION}_SHA256SUMS
+            - grep " $${TF_ZIP}$$" terraform_$${TF_VERSION}_SHA256SUMS > terraform_SHA256SUMS_linux_amd64
+            - sha256sum -c terraform_SHA256SUMS_linux_amd64
             - unzip -o terraform.zip -d /usr/local/bin/
             - terraform --version
         pre_build:
           commands:
             - echo "Initializing Terraform..."
             - cd terraform
-            - terraform init -input=false
+            - terraform init -input=false -backend-config="bucket=$${TF_STATE_BUCKET}" -backend-config="key=$${TF_STATE_KEY}" -backend-config="region=$${TF_STATE_REGION}" -backend-config="use_lockfile=true" -backend-config="encrypt=true"
         build:
           commands:
             - echo "Applying Terraform plan..."
@@ -1111,9 +1170,9 @@ resource "aws_codebuild_project" "apply" {
   }
 
   tags = {
-    Name        = "flink-data-pipeline-${var.environment}-apply"
+    Name        = "${var.project_name}-${var.environment}-apply"
     Environment = var.environment
-    Application = "flink-data-pipeline"
+    Application = var.project_name
   }
 }
 
@@ -1122,12 +1181,12 @@ resource "aws_codebuild_project" "apply" {
 # =============================================================================
 
 resource "aws_s3_bucket" "pipeline_artifacts" {
-  bucket = "flink-data-pipeline-${var.environment}-pipeline-artifacts"
+  bucket = var.pipeline_artifacts_bucket_name
 
   tags = {
-    Name        = "flink-data-pipeline-${var.environment}-pipeline-artifacts"
+    Name        = var.pipeline_artifacts_bucket_name
     Environment = var.environment
-    Application = "flink-data-pipeline"
+    Application = var.project_name
   }
 }
 
@@ -1160,18 +1219,47 @@ resource "aws_s3_bucket_public_access_block" "pipeline_artifacts" {
   restrict_public_buckets = true
 }
 
+data "aws_iam_policy_document" "pipeline_artifacts_tls_only" {
+  statement {
+    sid    = "DenyInsecureTransport"
+    effect = "Deny"
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+
+    actions = ["s3:*"]
+    resources = [
+      aws_s3_bucket.pipeline_artifacts.arn,
+      "${aws_s3_bucket.pipeline_artifacts.arn}/*"
+    ]
+
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "pipeline_artifacts_tls_only" {
+  bucket = aws_s3_bucket.pipeline_artifacts.id
+  policy = data.aws_iam_policy_document.pipeline_artifacts_tls_only.json
+}
+
 # =============================================================================
 # CodeConnections Connection for GitHub v2 Source
 # =============================================================================
 
 resource "aws_codeconnections_connection" "github" {
-  name          = "flink-data-pipeline-${var.environment}-github"
+  name          = "${var.project_name}-${var.environment}-github"
   provider_type = "GitHub"
 
   tags = {
-    Name        = "flink-data-pipeline-${var.environment}-github"
+    Name        = "${var.project_name}-${var.environment}-github"
     Environment = var.environment
-    Application = "flink-data-pipeline"
+    Application = var.project_name
   }
 }
 
@@ -1180,7 +1268,7 @@ resource "aws_codeconnections_connection" "github" {
 # =============================================================================
 
 resource "aws_iam_role" "codepipeline" {
-  name = "flink-data-pipeline-${var.environment}-codepipeline"
+  name = "${var.project_name}-${var.environment}-codepipeline"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -1201,9 +1289,9 @@ resource "aws_iam_role" "codepipeline" {
   })
 
   tags = {
-    Name        = "flink-data-pipeline-${var.environment}-codepipeline"
+    Name        = "${var.project_name}-${var.environment}-codepipeline"
     Environment = var.environment
-    Application = "flink-data-pipeline"
+    Application = var.project_name
   }
 }
 
@@ -1247,7 +1335,8 @@ resource "aws_iam_role_policy" "codepipeline_codeconnections" {
         Sid    = "CodeConnectionsAccess"
         Effect = "Allow"
         Action = [
-          "codeconnections:UseConnection"
+          "codeconnections:UseConnection",
+          "codestar-connections:UseConnection"
         ]
         Resource = aws_codeconnections_connection.github.arn
       }
@@ -1307,7 +1396,7 @@ resource "aws_iam_role_policy" "codepipeline_kms" {
 # =============================================================================
 
 resource "aws_codepipeline" "main" {
-  name     = "flink-data-pipeline-${var.environment}"
+  name     = "${var.project_name}-${var.environment}"
   role_arn = aws_iam_role.codepipeline.arn
 
   artifact_store {
@@ -1415,8 +1504,8 @@ resource "aws_codepipeline" "main" {
   }
 
   tags = {
-    Name        = "flink-data-pipeline-${var.environment}"
+    Name        = "${var.project_name}-${var.environment}"
     Environment = var.environment
-    Application = "flink-data-pipeline"
+    Application = var.project_name
   }
 }
