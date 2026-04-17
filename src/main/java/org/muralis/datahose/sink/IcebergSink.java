@@ -7,17 +7,25 @@ import org.apache.iceberg.CatalogUtil;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.DataFiles;
 import org.apache.iceberg.FileFormat;
+import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.hadoop.HadoopFileIO;
 import org.apache.iceberg.aws.glue.GlueCatalog;
 import org.apache.iceberg.aws.s3.S3FileIO;
 import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.Namespace;
+import org.apache.iceberg.catalog.SupportsNamespaces;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.data.GenericAppenderFactory;
+import org.apache.iceberg.data.IcebergGenerics;
+import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
+import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.io.FileAppender;
 import org.apache.iceberg.io.OutputFile;
+import org.apache.iceberg.types.Types;
+import org.apache.iceberg.hadoop.HadoopCatalog;
 import org.jetbrains.annotations.NotNull;
 import org.muralis.datahose.model.ProcessedRecord;
 import org.muralis.datahose.model.TemperatureSummary;
@@ -31,10 +39,13 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.Serial;
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -49,6 +60,7 @@ public class IcebergSink implements Sink<ProcessedRecord> {
 
     @Serial
     private static final long serialVersionUID = 1L;
+    private static final String JDBC_CATALOG_IMPL = "org.apache.iceberg.jdbc.JdbcCatalog";
 
     private final IcebergConfig config;
     private final IcebergWriterFactory writerFactory;
@@ -214,15 +226,66 @@ public class IcebergSink implements Sink<ProcessedRecord> {
     /**
          * Immutable configuration for the Iceberg catalog connection.
          */
-        public record IcebergConfig(String warehousePath, String catalogName, String tableName) implements Serializable {
+        public record IcebergConfig(
+            String warehousePath,
+            String catalogName,
+            String tableName,
+            String catalogImpl,
+            String fileIoImpl,
+            String jdbcUri,
+            String jdbcUser,
+            String jdbcPassword) implements Serializable {
 
             @Serial
             private static final long serialVersionUID = 1L;
 
             public IcebergConfig(String warehousePath, String catalogName, String tableName) {
-                this.warehousePath = Objects.requireNonNull(warehousePath, "warehousePath must not be null");
-                this.catalogName = Objects.requireNonNull(catalogName, "catalogName must not be null");
-                this.tableName = Objects.requireNonNull(tableName, "tableName must not be null");
+                this(warehousePath, catalogName, tableName,
+                    GlueCatalog.class.getName(), S3FileIO.class.getName(),
+                    null, null, null);
+            }
+
+            public static IcebergConfig local(String warehousePath, String catalogName, String tableName) {
+                return new IcebergConfig(
+                        warehousePath,
+                        catalogName,
+                        tableName,
+                        HadoopCatalog.class.getName(),
+                        HadoopFileIO.class.getName(),
+                        null,
+                        null,
+                        null);
+                }
+
+                public static IcebergConfig localJdbc(
+                    String warehousePath,
+                    String catalogName,
+                    String tableName,
+                    String jdbcUri,
+                    String jdbcUser,
+                    String jdbcPassword) {
+                return new IcebergConfig(
+                        warehousePath,
+                        catalogName,
+                        tableName,
+                    JDBC_CATALOG_IMPL,
+                    HadoopFileIO.class.getName(),
+                    jdbcUri,
+                    jdbcUser,
+                    jdbcPassword);
+            }
+
+            public IcebergConfig {
+                Objects.requireNonNull(warehousePath, "warehousePath must not be null");
+                Objects.requireNonNull(catalogName, "catalogName must not be null");
+                Objects.requireNonNull(tableName, "tableName must not be null");
+                Objects.requireNonNull(catalogImpl, "catalogImpl must not be null");
+                Objects.requireNonNull(fileIoImpl, "fileIoImpl must not be null");
+                if (JDBC_CATALOG_IMPL.equals(catalogImpl)) {
+                    Objects.requireNonNull(jdbcUri, "jdbcUri must not be null for JdbcCatalog");
+                    Objects.requireNonNull(jdbcUser, "jdbcUser must not be null for JdbcCatalog");
+                    Objects.requireNonNull(jdbcPassword, "jdbcPassword must not be null for JdbcCatalog");
+                }
             }
 
             @Override
@@ -231,6 +294,9 @@ public class IcebergSink implements Sink<ProcessedRecord> {
                         + "warehousePath='" + warehousePath + '\''
                         + ", catalogName='" + catalogName + '\''
                         + ", tableName='" + tableName + '\''
+                    + ", catalogImpl='" + catalogImpl + '\''
+                    + ", fileIoImpl='" + fileIoImpl + '\''
+                        + ", jdbcUri='" + jdbcUri + '\''
                         + '}';
             }
         }
@@ -249,9 +315,11 @@ public class IcebergSink implements Sink<ProcessedRecord> {
 
         private static final Logger LOG = LoggerFactory.getLogger(DefaultIcebergTableWriter.class);
 
+        private final IcebergConfig config;
         private final Catalog catalog;
 
         DefaultIcebergTableWriter(IcebergConfig config) {
+            this.config = config;
             this.catalog = createCatalog(config);
         }
 
@@ -262,23 +330,29 @@ public class IcebergSink implements Sink<ProcessedRecord> {
             }
 
             TableIdentifier identifier = parseIdentifier(tableName);
-            Table table = catalog.loadTable(identifier);
+            Table table = loadOrCreateTable(identifier);
+            List<GenericRecord> rowsToWrite = dedupeRowsIfLocal(table, rows);
+
+            if (rowsToWrite.isEmpty()) {
+                LOG.info("Skipped {} duplicate row(s) for Iceberg table '{}'", rows.size(), tableName);
+                return;
+            }
 
             String dataPath = table.location() + "/data/" + UUID.randomUUID() + ".avro";
             OutputFile outputFile = table.io().newOutputFile(dataPath);
             GenericAppenderFactory appenderFactory = new GenericAppenderFactory(table.schema());
 
             long recordCount = 0L;
-            long fileSize;
 
             try (FileAppender<org.apache.iceberg.data.Record> appender =
                          appenderFactory.newAppender(outputFile, FileFormat.AVRO)) {
-                for (GenericRecord row : rows) {
+                for (GenericRecord row : rowsToWrite) {
                     appender.add(toIcebergRecord(table.schema(), row));
                     recordCount++;
                 }
-                fileSize = appender.length();
             }
+            // Capture actual file size after the appender is fully closed and flushed to disk
+            long fileSize = table.io().newInputFile(dataPath).getLength();
 
             DataFile dataFile = DataFiles.builder(table.spec())
                     .withPath(outputFile.location())
@@ -290,6 +364,48 @@ public class IcebergSink implements Sink<ProcessedRecord> {
             table.newAppend().appendFile(dataFile).commit();
             LOG.info("Appended {} rows to Iceberg table '{}' via {}",
                     recordCount, tableName, outputFile.location());
+        }
+
+        private List<GenericRecord> dedupeRowsIfLocal(Table table, List<GenericRecord> rows) throws IOException {
+            if (!JDBC_CATALOG_IMPL.equals(config.catalogImpl())) {
+                return rows;
+            }
+
+            Set<String> existingRowKeys = new HashSet<>();
+            try (CloseableIterable<org.apache.iceberg.data.Record> existingRows = IcebergGenerics.read(table).build()) {
+                for (org.apache.iceberg.data.Record existingRow : existingRows) {
+                    existingRowKeys.add(rowKey(table.schema(), existingRow));
+                }
+            }
+
+            List<GenericRecord> filteredRows = new ArrayList<>();
+            for (GenericRecord row : rows) {
+                String rowKey = rowKey(table.schema(), row);
+                if (existingRowKeys.add(rowKey)) {
+                    filteredRows.add(row);
+                }
+            }
+            return filteredRows;
+        }
+
+        private String rowKey(Schema schema, org.apache.iceberg.data.Record row) {
+            StringBuilder keyBuilder = new StringBuilder();
+            schema.columns().forEach(field -> keyBuilder
+                    .append(field.name())
+                    .append('=')
+                    .append(String.valueOf(row.getField(field.name())))
+                    .append('|'));
+            return keyBuilder.toString();
+        }
+
+        private String rowKey(Schema schema, GenericRecord row) {
+            StringBuilder keyBuilder = new StringBuilder();
+            schema.columns().forEach(field -> keyBuilder
+                    .append(field.name())
+                    .append('=')
+                    .append(String.valueOf(row.get(field.name())))
+                    .append('|'));
+            return keyBuilder.toString();
         }
 
         @Override
@@ -307,11 +423,16 @@ public class IcebergSink implements Sink<ProcessedRecord> {
         private Catalog createCatalog(IcebergConfig config) {
             Map<String, String> properties = new HashMap<>();
             properties.put(CatalogProperties.WAREHOUSE_LOCATION, config.warehousePath());
-            properties.put(CatalogProperties.FILE_IO_IMPL, S3FileIO.class.getName());
+            properties.put(CatalogProperties.FILE_IO_IMPL, config.fileIoImpl());
+            if (JDBC_CATALOG_IMPL.equals(config.catalogImpl())) {
+                properties.put(CatalogProperties.URI, config.jdbcUri());
+                properties.put("jdbc.user", config.jdbcUser());
+                properties.put("jdbc.password", config.jdbcPassword());
+            }
 
             return CatalogUtil.loadCatalog(
+                    config.catalogImpl(),
                     config.catalogName(),
-                    GlueCatalog.class.getName(),
                     properties,
                     new Configuration());
         }
@@ -321,6 +442,35 @@ public class IcebergSink implements Sink<ProcessedRecord> {
                 return TableIdentifier.parse(tableName);
             }
             return TableIdentifier.of(Namespace.of("default"), tableName);
+        }
+
+        private Table loadOrCreateTable(TableIdentifier identifier) {
+            try {
+                return catalog.loadTable(identifier);
+            } catch (NoSuchTableException e) {
+                if (!JDBC_CATALOG_IMPL.equals(config.catalogImpl())) {
+                    throw e;
+                }
+
+                Schema schema = new Schema(
+                        Types.NestedField.required(1, "date", Types.StringType.get()),
+                        Types.NestedField.required(2, "max_temp", Types.IntegerType.get()),
+                        Types.NestedField.required(3, "max_temp_city", Types.StringType.get()),
+                        Types.NestedField.required(4, "min_temp", Types.IntegerType.get()),
+                        Types.NestedField.required(5, "min_temp_city", Types.StringType.get()));
+
+                if (catalog instanceof SupportsNamespaces namespaceCatalog) {
+                    try {
+                        namespaceCatalog.createNamespace(identifier.namespace());
+                    } catch (AlreadyExistsException ignored) {
+                        // Namespace already exists.
+                    }
+                }
+
+                LOG.info("Creating local Iceberg table '{}' in warehouse '{}'",
+                        identifier, config.warehousePath());
+                return catalog.createTable(identifier, schema, PartitionSpec.unpartitioned());
+            }
         }
 
         private org.apache.iceberg.data.Record toIcebergRecord(Schema schema, GenericRecord avroRecord) {

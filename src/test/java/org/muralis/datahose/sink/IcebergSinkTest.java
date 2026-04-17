@@ -1,6 +1,7 @@
 package org.muralis.datahose.sink;
 
 import org.apache.avro.generic.GenericRecord;
+import org.apache.iceberg.hadoop.HadoopCatalog;
 import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.muralis.datahose.model.ProcessedRecord;
 import org.muralis.datahose.model.S3Notification;
@@ -252,6 +253,30 @@ class IcebergSinkTest {
     @Test
     void constructor_rejectsNullConfig() {
         assertThrows(NullPointerException.class, () -> new IcebergSink(null));
+    }
+
+    @Test
+    void localConfig_usesFilesystemCatalog() {
+        IcebergConfig localConfig = IcebergConfig.local("file:///tmp/warehouse", "local_catalog", "default.temperature_summary");
+
+        assertEquals(HadoopCatalog.class.getName(), localConfig.catalogImpl());
+        assertNull(localConfig.jdbcUri());
+        assertNull(localConfig.jdbcUser());
+        assertNull(localConfig.jdbcPassword());
+    }
+
+    @Test
+    void localJdbcConfig_usesJdbcCatalog() {
+        IcebergConfig localConfig = IcebergConfig.localJdbc(
+                "file:///tmp/warehouse",
+                "local_catalog",
+                "default.temperature_summary",
+                "jdbc:postgresql://localhost:5433/iceberg_catalog",
+                "iceberg_user",
+                "iceberg_password");
+
+        assertEquals("org.apache.iceberg.jdbc.JdbcCatalog", localConfig.catalogImpl());
+        assertEquals("jdbc:postgresql://localhost:5433/iceberg_catalog", localConfig.jdbcUri());
     }
 
     @Test

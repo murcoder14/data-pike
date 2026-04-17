@@ -49,6 +49,95 @@ mvn clean package
 mvn test
 ```
 
+## Cloud Runtime Properties
+
+Managed Flink must provide two environment property groups:
+
+- `KinesisSource`
+	- `stream.arn`
+	- `aws.region`
+- `IcebergSink`
+	- `warehouse.path`
+	- `catalog.name`
+	- `table.name`
+
+If those property groups are absent, the application falls back to standard environment variables or classpath properties:
+
+```bash
+KINESIS_STREAM_ARN
+AWS_REGION
+ICEBERG_WAREHOUSE_PATH
+ICEBERG_CATALOG_NAME
+ICEBERG_TABLE_NAME
+KINESIS_INITIAL_POSITION
+```
+
+## Local Mode (RabbitMQ Streams + Local Iceberg)
+
+Trino compatibility note:
+local mode uses an Iceberg JDBC catalog backed by PostgreSQL.
+Docker Compose starts Postgres and both Flink and Trino connect to it
+for Iceberg metadata, while table data stays in the local warehouse path.
+Host-side defaults in application-local.properties point at the compose-exposed
+Postgres port 5433; in-container services override that with port 5432.
+
+Run preflight checks (tools, Docker daemon, and ports):
+
+```bash
+./scripts/local-preflight.sh
+```
+
+Create your local environment file for credentials and runtime overrides:
+
+```bash
+cp .env.local.example .env.local
+```
+
+Edit `.env.local` as needed for your local RabbitMQ/Postgres credentials.
+
+Start local stack and submit Flink job:
+
+```bash
+./scripts/local-up.sh
+```
+
+Send test messages and verify Iceberg output:
+
+```bash
+./scripts/local-smoke-test.sh
+```
+
+Query Iceberg tables with Trino:
+
+```bash
+./scripts/local-trino-query.sh "SHOW TABLES IN iceberg.default"
+./scripts/local-trino-query.sh "SELECT * FROM iceberg.default.temperature_summary ORDER BY date LIMIT 20"
+```
+
+Open interactive Trino shell:
+
+```bash
+./scripts/local-trino-shell.sh
+```
+
+Collect service logs into timestamped files:
+
+```bash
+./scripts/local-logs.sh
+```
+
+Stop local stack:
+
+```bash
+./scripts/local-down.sh
+```
+
+Stop and purge local data:
+
+```bash
+./scripts/local-down.sh --purge
+```
+
 ## Infrastructure
 
 All Terraform configuration lives in the `terraform/` directory. See [terraform/README.md](terraform/README.md) for detailed deployment instructions, including state backend bootstrap, multi-environment setup, and smoke testing.

@@ -6,6 +6,7 @@ import org.muralis.datahose.model.S3FileContent;
 import org.muralis.datahose.model.S3Notification;
 import org.muralis.datahose.model.TemperatureSummary;
 import org.muralis.datahose.model.WeatherObservation;
+import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.api.common.functions.RichFlatMapFunction;
 import org.apache.flink.util.Collector;
 import org.slf4j.Logger;
@@ -33,17 +34,11 @@ public class FileProcessor extends RichFlatMapFunction<S3FileContent, ProcessedR
     private static final long serialVersionUID = 1L;
     private static final Logger LOG = LoggerFactory.getLogger(FileProcessor.class);
 
-    private final Map<FileFormat, StructuredFileParser> parsers;
-    private final TemperatureSummaryCalculator summaryCalculator;
+    private transient Map<FileFormat, StructuredFileParser> parsers;
+    private transient TemperatureSummaryCalculator summaryCalculator;
 
     public FileProcessor() {
-        this(
-                Map.of(
-                        FileFormat.CSV, new DelimitedStructuredFileParser(","),
-                        FileFormat.TSV, new DelimitedStructuredFileParser("\t"),
-                        FileFormat.JSON, new JsonStructuredFileParser(),
-                        FileFormat.XML, new XmlStructuredFileParser()),
-                new TemperatureSummaryCalculator());
+        this(defaultParsers(), new TemperatureSummaryCalculator());
     }
 
             FileProcessor(
@@ -54,7 +49,14 @@ public class FileProcessor extends RichFlatMapFunction<S3FileContent, ProcessedR
     }
 
     @Override
+    public void open(OpenContext openContext) {
+        initDependenciesIfNeeded();
+    }
+
+    @Override
     public void flatMap(S3FileContent fileContent, Collector<ProcessedRecord> out) {
+        initDependenciesIfNeeded();
+
         S3Notification notification = fileContent.notification();
         FileFormat fileFormat = fileContent.format();
         Instant processingTime = Instant.now();
@@ -106,5 +108,22 @@ public class FileProcessor extends RichFlatMapFunction<S3FileContent, ProcessedR
             throw new IllegalArgumentException("Unsupported file format: " + format);
         }
         return parser;
+    }
+
+    private void initDependenciesIfNeeded() {
+        if (parsers == null) {
+            parsers = defaultParsers();
+        }
+        if (summaryCalculator == null) {
+            summaryCalculator = new TemperatureSummaryCalculator();
+        }
+    }
+
+    private static Map<FileFormat, StructuredFileParser> defaultParsers() {
+        return Map.of(
+                FileFormat.CSV, new DelimitedStructuredFileParser(","),
+                FileFormat.TSV, new DelimitedStructuredFileParser("\t"),
+                FileFormat.JSON, new JsonStructuredFileParser(),
+                FileFormat.XML, new XmlStructuredFileParser());
     }
 }

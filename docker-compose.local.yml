@@ -1,0 +1,109 @@
+services:
+  rabbitmq:
+    image: ubuntu/rabbitmq:3.12-24.04_stable
+    container_name: data-pike-rabbitmq
+    hostname: rabbitmq
+    ports:
+      - "5672:5672"
+      - "5552:5552"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-datapike}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-datapike}
+    volumes:
+      - ./rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics ping || /usr/lib/rabbitmq/bin/rabbitmq-diagnostics ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    image: postgres:16-bookworm
+    container_name: data-pike-postgres
+    hostname: postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-iceberg_catalog}
+      POSTGRES_USER: ${POSTGRES_USER:-iceberg_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-iceberg_password}
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./local-data/postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-iceberg_user} -d ${POSTGRES_DB:-iceberg_catalog}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  jobmanager:
+    image: flink:scala_2.12-java17
+    container_name: data-pike-flink-jobmanager
+    hostname: jobmanager
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    command: jobmanager
+    environment:
+      EXECUTION_MODE: local
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5552"
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-datapike}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-datapike}
+      RABBITMQ_STREAM_NAME: ${RABBITMQ_STREAM_NAME:-weather-stream}
+      ICEBERG_WAREHOUSE_PATH: file:///opt/flink/local-warehouse
+      ICEBERG_CATALOG_NAME: local_catalog
+      ICEBERG_TABLE_NAME: default.temperature_summary
+      ICEBERG_JDBC_URI: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-iceberg_catalog}
+      ICEBERG_JDBC_USER: ${ICEBERG_JDBC_USER:-iceberg_user}
+      ICEBERG_JDBC_PASSWORD: ${ICEBERG_JDBC_PASSWORD:-iceberg_password}
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: jobmanager
+        state.backend.type: hashmap
+        execution.checkpointing.checkpoint-storage: filesystem
+        execution.checkpointing.checkpoints-dir: file:///opt/flink/checkpoints
+        execution.checkpointing.savepoint-dir: file:///opt/flink/savepoints
+    volumes:
+      - ./target:/opt/flink/usrlib
+      - ./local-data/warehouse:/opt/flink/local-warehouse
+      - ./local-data/checkpoints:/opt/flink/checkpoints
+      - ./local-data/savepoints:/opt/flink/savepoints
+
+  taskmanager:
+    image: flink:scala_2.12-java17
+    container_name: data-pike-flink-taskmanager
+    depends_on:
+      - jobmanager
+    command: taskmanager
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: jobmanager
+        taskmanager.numberOfTaskSlots: 2
+    volumes:
+      - ./target:/opt/flink/usrlib
+      - ./local-data/warehouse:/opt/flink/local-warehouse
+      - ./local-data/checkpoints:/opt/flink/checkpoints
+      - ./local-data/savepoints:/opt/flink/savepoints
+
+  trino:
+    image: trinodb/trino:480
+    container_name: data-pike-trino
+    hostname: trino
+    depends_on:
+      jobmanager:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-iceberg_catalog}
+      ICEBERG_JDBC_USER: ${ICEBERG_JDBC_USER:-iceberg_user}
+      ICEBERG_JDBC_PASSWORD: ${ICEBERG_JDBC_PASSWORD:-iceberg_password}
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog:ro
+      - ./local-data/warehouse:/opt/flink/local-warehouse

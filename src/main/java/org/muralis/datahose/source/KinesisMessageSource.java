@@ -1,5 +1,6 @@
 package org.muralis.datahose.source;
 
+import org.muralis.datahose.configuration.AppConfig;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.connector.aws.config.AWSConfigOptions;
@@ -57,5 +58,12 @@ public final class KinesisMessageSource {
      */
     public static KinesisStreamsSource<String> create(String streamArn, String awsRegion) {
         return create(streamArn, awsRegion, KinesisSourceConfigOptions.InitialPosition.LATEST);
+    }
+
+    /**
+     * Creates a source from resolved cloud configuration.
+     */
+    public static KinesisStreamsSource<String> create(AppConfig.KinesisConfig config) {
+        return create(config.streamArn(), config.awsRegion(), config.initialPosition());
     }
 }
