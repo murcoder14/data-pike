@@ -900,7 +900,7 @@ resource "aws_codebuild_project" "plan" {
   build_timeout = 30
 
   artifacts {
-    type = "NO_ARTIFACTS"
+    type = "CODEPIPELINE"
   }
 
   environment {
@@ -993,44 +993,8 @@ resource "aws_codebuild_project" "plan" {
   }
 
   source {
-    type      = "GITHUB"
-    location  = "https://github.com/${var.github_repo}.git"
-    buildspec = <<-BUILDSPEC
-      version: 0.2
-      phases:
-        install:
-          commands:
-            - echo "Installing Terraform..."
-            - export TF_VERSION=1.14.8
-            - export TF_ZIP=terraform_$${TF_VERSION}_linux_amd64.zip
-            - curl -fsSLO https://releases.hashicorp.com/terraform/$${TF_VERSION}/$${TF_ZIP}
-            - curl -fsSLO https://releases.hashicorp.com/terraform/$${TF_VERSION}/terraform_$${TF_VERSION}_SHA256SUMS
-            - grep " $${TF_ZIP}\$" terraform_$${TF_VERSION}_SHA256SUMS > terraform_SHA256SUMS_linux_amd64
-            - sha256sum -c terraform_SHA256SUMS_linux_amd64
-            - unzip -o $${TF_ZIP} -d /usr/local/bin/
-            - terraform --version
-        pre_build:
-          commands:
-            - echo "Initializing Terraform..."
-            - cd terraform
-            - terraform init -input=false -backend-config="bucket=$${TF_STATE_BUCKET}" -backend-config="key=$${TF_STATE_KEY}" -backend-config="region=$${TF_STATE_REGION}" -backend-config="use_lockfile=true" -backend-config="encrypt=true"
-        build:
-          commands:
-            - echo "Running terraform plan with file_key=$TF_VAR_file_key..."
-            - terraform plan -input=false -out=tfplan
-            - PLAN_SUMMARY=$(terraform show -no-color tfplan | awk '/^Plan:/{print; exit}')
-            - if [[ -z "$${PLAN_SUMMARY}" ]]; then echo "ERROR - could not parse plan summary"; exit 1; fi
-            - echo "$${PLAN_SUMMARY}"
-            - DESTROY_COUNT=$(echo "$${PLAN_SUMMARY}" | sed -E 's/.* ([0-9]+) to destroy.*/\1/')
-            - if [[ "$${DESTROY_COUNT}" -gt 0 ]]; then echo "ERROR - plan includes $${DESTROY_COUNT} destroy actions"; exit 1; fi
-            - echo "Plan complete. Details logged above."
-            - echo "Generating human-readable plan output..."
-            - terraform show tfplan
-      artifacts:
-        files:
-          - terraform/tfplan
-        discard-paths: no
-    BUILDSPEC
+    type      = "CODEPIPELINE"
+    buildspec = "terraform/buildspecs/plan.yml"
   }
 
   logs_config {
@@ -1058,7 +1022,7 @@ resource "aws_codebuild_project" "apply" {
   build_timeout = 30
 
   artifacts {
-    type = "NO_ARTIFACTS"
+    type = "CODEPIPELINE"
   }
 
   environment {
@@ -1104,39 +1068,8 @@ resource "aws_codebuild_project" "apply" {
   }
 
   source {
-    type      = "GITHUB"
-    location  = "https://github.com/${var.github_repo}.git"
-    buildspec = <<-BUILDSPEC
-      version: 0.2
-      phases:
-        install:
-          commands:
-            - echo "Installing Terraform..."
-            - export TF_VERSION=1.14.8
-            - export TF_ZIP=terraform_$${TF_VERSION}_linux_amd64.zip
-            - curl -fsSLO https://releases.hashicorp.com/terraform/$${TF_VERSION}/$${TF_ZIP}
-            - curl -fsSLO https://releases.hashicorp.com/terraform/$${TF_VERSION}/terraform_$${TF_VERSION}_SHA256SUMS
-            - grep " $${TF_ZIP}\$" terraform_$${TF_VERSION}_SHA256SUMS > terraform_SHA256SUMS_linux_amd64
-            - sha256sum -c terraform_SHA256SUMS_linux_amd64
-            - unzip -o $${TF_ZIP} -d /usr/local/bin/
-            - terraform --version
-        pre_build:
-          commands:
-            - echo "Initializing Terraform..."
-            - cd terraform
-            - cp $CODEBUILD_SRC_DIR_plan_output/terraform/tfplan ./tfplan
-            - terraform init -input=false -backend-config="bucket=$${TF_STATE_BUCKET}" -backend-config="key=$${TF_STATE_KEY}" -backend-config="region=$${TF_STATE_REGION}" -backend-config="use_lockfile=true" -backend-config="encrypt=true"
-        build:
-          commands:
-            - PLAN_SUMMARY=$(terraform show -no-color tfplan | awk '/^Plan:/{print; exit}')
-            - if [[ -z "$${PLAN_SUMMARY}" ]]; then echo "ERROR - could not parse plan summary"; exit 1; fi
-            - echo "Plan summary - $${PLAN_SUMMARY}"
-            - DESTROY_COUNT=$(echo "$${PLAN_SUMMARY}" | sed -E 's/.* ([0-9]+) to destroy.*/\1/')
-            - if [[ "$${DESTROY_COUNT}" -gt 0 ]]; then echo "ERROR - plan includes $${DESTROY_COUNT} destroy actions"; exit 1; fi
-            - echo "Applying Terraform plan..."
-            - terraform apply -input=false -auto-approve tfplan
-            - echo "Terraform apply complete."
-    BUILDSPEC
+    type      = "CODEPIPELINE"
+    buildspec = "terraform/buildspecs/apply.yml"
   }
 
   logs_config {
