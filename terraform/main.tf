@@ -90,34 +90,4 @@ module "flink" {
   iceberg_database_name   = var.iceberg_database_name
 }
 
-# =============================================================================
-# CI/CD Module
-# =============================================================================
-
-module "cicd" {
-  source                         = "./modules/cicd"
-  project_name                   = var.project_name
-  environment                    = var.environment
-  kms_key_arn                    = module.storage.kms_key_arn
-  kms_alias_arn                  = module.storage.kms_alias_arn
-  jar_bucket_arn                 = module.storage.jar_bucket_arn
-  jar_bucket_id                  = module.storage.jar_bucket_id
-  input_bucket_arn               = module.storage.input_bucket_arn
-  iceberg_bucket_arn             = module.storage.iceberg_bucket_arn
-  kinesis_stream_arn             = module.kinesis.kinesis_stream_arn
-  codebuild_build_log_group_name = module.monitoring.codebuild_build_log_group_name
-  codebuild_build_log_group_arn  = module.monitoring.codebuild_build_log_group_arn
-  codebuild_plan_log_group_name  = module.monitoring.codebuild_plan_log_group_name
-  codebuild_plan_log_group_arn   = module.monitoring.codebuild_plan_log_group_arn
-  codebuild_apply_log_group_name = module.monitoring.codebuild_apply_log_group_name
-  codebuild_apply_log_group_arn  = module.monitoring.codebuild_apply_log_group_arn
-  flink_log_group_arn            = module.monitoring.flink_log_group_arn
-  terraform_state_bucket_arn     = aws_s3_bucket.terraform_state.arn
-  terraform_lock_table_arn       = aws_dynamodb_table.terraform_lock.arn
-  github_repo                    = var.github_repo
-  github_branch                  = var.github_branch
-  file_key                       = var.file_key
-  pipeline_artifacts_bucket_name = var.pipeline_artifacts_bucket_name != "" ? var.pipeline_artifacts_bucket_name : "${var.project_name}-${var.environment}-pipeline-artifacts"
-  iceberg_database_name          = var.iceberg_database_name
-  iceberg_table_name             = var.iceberg_table_name
-}
+# CI/CD module removed — retaining core data pipeline infrastructure only

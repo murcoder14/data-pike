@@ -192,39 +192,7 @@ output "flink_execution_role_name" {
   value       = module.flink.flink_execution_role_name
 }
 
-# --- CI/CD IAM Role Outputs ---
-
-output "codebuild_build_role_arn" {
-  description = "ARN of the IAM role for the Build Stage CodeBuild project"
-  value       = module.cicd.codebuild_build_role_arn
-}
-
-output "codebuild_build_role_name" {
-  description = "Name of the IAM role for the Build Stage CodeBuild project"
-  value       = module.cicd.codebuild_build_role_name
-}
-
-output "codebuild_plan_role_arn" {
-  description = "ARN of the IAM role for the Plan Stage CodeBuild project"
-  value       = module.cicd.codebuild_plan_role_arn
-}
-
-output "codebuild_plan_role_name" {
-  description = "Name of the IAM role for the Plan Stage CodeBuild project"
-  value       = module.cicd.codebuild_plan_role_name
-}
-
-output "codebuild_apply_role_arn" {
-  description = "ARN of the IAM role for the Apply Stage CodeBuild project"
-  value       = module.cicd.codebuild_apply_role_arn
-}
-
-output "codebuild_apply_role_name" {
-  description = "Name of the IAM role for the Apply Stage CodeBuild project"
-  value       = module.cicd.codebuild_apply_role_name
-}
-
-# --- Flink Application Outputs ---
+# CI/CD outputs removed — module torn down
 
 output "flink_application_name" {
   description = "Name of the Managed Service for Apache Flink application"
@@ -251,71 +219,4 @@ output "flink_application_version_id" {
   value       = module.flink.flink_application_version_id
 }
 
-# --- CodeBuild Project Outputs ---
-
-output "codebuild_build_project_name" {
-  description = "Name of the Build Stage CodeBuild project"
-  value       = module.cicd.codebuild_build_project_name
-}
-
-output "codebuild_build_project_arn" {
-  description = "ARN of the Build Stage CodeBuild project"
-  value       = module.cicd.codebuild_build_project_arn
-}
-
-output "codebuild_plan_project_name" {
-  description = "Name of the Plan Stage CodeBuild project"
-  value       = module.cicd.codebuild_plan_project_name
-}
-
-output "codebuild_plan_project_arn" {
-  description = "ARN of the Plan Stage CodeBuild project"
-  value       = module.cicd.codebuild_plan_project_arn
-}
-
-output "codebuild_apply_project_name" {
-  description = "Name of the Apply Stage CodeBuild project"
-  value       = module.cicd.codebuild_apply_project_name
-}
-
-output "codebuild_apply_project_arn" {
-  description = "ARN of the Apply Stage CodeBuild project"
-  value       = module.cicd.codebuild_apply_project_arn
-}
-
-# --- CodePipeline Outputs ---
-
-output "codepipeline_name" {
-  description = "Name of the CI/CD CodePipeline"
-  value       = module.cicd.codepipeline_name
-}
-
-output "codepipeline_arn" {
-  description = "ARN of the CI/CD CodePipeline"
-  value       = module.cicd.codepipeline_arn
-}
-
-output "codepipeline_role_arn" {
-  description = "ARN of the IAM role used by CodePipeline"
-  value       = module.cicd.codepipeline_role_arn
-}
-
-output "pipeline_artifacts_bucket_name" {
-  description = "Name of the S3 bucket for pipeline artifacts"
-  value       = module.cicd.pipeline_artifacts_bucket_name
-}
-
-output "pipeline_artifacts_bucket_arn" {
-  description = "ARN of the S3 bucket for pipeline artifacts"
-  value       = module.cicd.pipeline_artifacts_bucket_arn
-}
-
-output "github_codestar_connection_arn" {
-  description = "ARN of the CodeConnections connection for GitHub"
-  value       = module.cicd.github_codestar_connection_arn
-}
-
-output "github_codestar_connection_status" {
-  description = "Status of the CodeConnections connection for GitHub (must be AVAILABLE after manual confirmation)"
-  value       = module.cicd.github_codestar_connection_status
-}
+# --- Flink Application Outputs ---
