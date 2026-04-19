@@ -131,3 +131,15 @@ variable "pipeline_artifacts_bucket_name" {
   type        = string
   nullable    = false
 }
+
+variable "iceberg_database_name" {
+  description = "Glue Catalog database name for Iceberg tables (injected into plan/apply as TF_VAR)"
+  type        = string
+  nullable    = false
+}
+
+variable "iceberg_table_name" {
+  description = "Iceberg table name (injected into plan/apply as TF_VAR)"
+  type        = string
+  nullable    = false
+}

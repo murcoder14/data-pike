@@ -118,4 +118,6 @@ module "cicd" {
   github_branch                  = var.github_branch
   file_key                       = var.file_key
   pipeline_artifacts_bucket_name = var.pipeline_artifacts_bucket_name != "" ? var.pipeline_artifacts_bucket_name : "${var.project_name}-${var.environment}-pipeline-artifacts"
+  iceberg_database_name          = var.iceberg_database_name
+  iceberg_table_name             = var.iceberg_table_name
 }
