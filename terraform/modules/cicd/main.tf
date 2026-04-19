@@ -145,6 +145,33 @@ resource "aws_iam_role_policy" "build_codebuild" {
   })
 }
 
+# Build_Stage: pipeline artifacts bucket (CodePipeline passes source/output artifacts through here)
+resource "aws_iam_role_policy" "build_s3_artifacts" {
+  name = "build-s3-artifacts-readwrite"
+  role = aws_iam_role.codebuild_build.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "ArtifactsBucketReadWrite"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:GetObjectVersion",
+          "s3:PutObject",
+          "s3:ListBucket",
+          "s3:GetBucketLocation"
+        ]
+        Resource = [
+          "arn:aws:s3:::${var.pipeline_artifacts_bucket_name}",
+          "arn:aws:s3:::${var.pipeline_artifacts_bucket_name}/*"
+        ]
+      }
+    ]
+  })
+}
+
 # =============================================================================
 # Plan_Stage IAM Role
 # =============================================================================
@@ -177,20 +204,22 @@ resource "aws_iam_role" "codebuild_plan" {
   }
 }
 
-# Plan_Stage: S3 read on state bucket
+# Plan_Stage: S3 read/write on state bucket (read state + manage .tflock lockfile)
 resource "aws_iam_role_policy" "plan_s3_state" {
-  name = "plan-s3-state-read"
+  name = "plan-s3-state-readwrite"
   role = aws_iam_role.codebuild_plan.id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "S3StateRead"
+        Sid    = "S3StateReadWrite"
         Effect = "Allow"
         Action = [
           "s3:GetObject",
           "s3:GetObjectVersion",
+          "s3:PutObject",
+          "s3:DeleteObject",
           "s3:ListBucket",
           "s3:GetBucketLocation"
         ]
@@ -252,163 +281,10 @@ resource "aws_iam_role_policy" "plan_cloudwatch" {
   })
 }
 
-# Plan_Stage: Read-only AWS resource access for terraform plan
-resource "aws_iam_role_policy" "plan_readonly" {
-  name = "plan-readonly-resource-access"
-  role = aws_iam_role.codebuild_plan.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "S3ReadAllBuckets"
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:GetObjectVersion",
-          "s3:ListBucket",
-          "s3:GetBucketLocation",
-          "s3:GetBucketVersioning",
-          "s3:GetBucketPolicy",
-          "s3:GetBucketAcl",
-          "s3:GetBucketLogging",
-          "s3:GetEncryptionConfiguration",
-          "s3:GetBucketPublicAccessBlock",
-          "s3:GetBucketNotification",
-          "s3:GetBucketTagging"
-        ]
-        Resource = [
-          var.input_bucket_arn,
-          "${var.input_bucket_arn}/*",
-          var.iceberg_bucket_arn,
-          "${var.iceberg_bucket_arn}/*",
-          var.jar_bucket_arn,
-          "${var.jar_bucket_arn}/*"
-        ]
-      },
-      {
-        Sid    = "KinesisDescribe"
-        Effect = "Allow"
-        Action = [
-          "kinesis:DescribeStream",
-          "kinesis:DescribeStreamSummary",
-          "kinesis:ListTagsForStream"
-        ]
-        Resource = var.kinesis_stream_arn
-      },
-      {
-        Sid    = "RDSDescribe"
-        Effect = "Allow"
-        Action = [
-          "rds:DescribeDBInstances",
-          "rds:DescribeDBProxies",
-          "rds:DescribeDBSubnetGroups",
-          "rds:DescribeDBParameterGroups",
-          "rds:DescribeDBParameters",
-          "rds:ListTagsForResource"
-        ]
-        Resource = [
-          "arn:aws:rds:${local.region}:${local.account_id}:db:${var.project_name}-${var.environment}",
-          "arn:aws:rds:${local.region}:${local.account_id}:db-proxy:*",
-          "arn:aws:rds:${local.region}:${local.account_id}:subgrp:${var.project_name}-${var.environment}-*",
-          "arn:aws:rds:${local.region}:${local.account_id}:pg:${var.project_name}-${var.environment}-*"
-        ]
-      },
-      {
-        Sid    = "EC2Describe"
-        Effect = "Allow"
-        Action = [
-          "ec2:DescribeVpcs",
-          "ec2:DescribeSubnets",
-          "ec2:DescribeSecurityGroups",
-          "ec2:DescribeSecurityGroupRules",
-          "ec2:DescribeVpcEndpoints",
-          "ec2:DescribeRouteTables",
-          "ec2:DescribeNetworkInterfaces",
-          "ec2:DescribePrefixLists"
-        ]
-        Resource = "arn:aws:ec2:${local.region}:${local.account_id}:*"
-      },
-      {
-        Sid    = "IAMReadOnly"
-        Effect = "Allow"
-        Action = [
-          "iam:GetRole",
-          "iam:GetRolePolicy",
-          "iam:ListRolePolicies",
-          "iam:ListAttachedRolePolicies",
-          "iam:GetPolicy",
-          "iam:GetPolicyVersion"
-        ]
-        Resource = [
-          "arn:aws:iam::${local.account_id}:role/${var.project_name}-${var.environment}-*",
-          "arn:aws:iam::${local.account_id}:policy/${var.project_name}-${var.environment}-*"
-        ]
-      },
-      {
-        Sid    = "KMSDescribe"
-        Effect = "Allow"
-        Action = [
-          "kms:DescribeKey",
-          "kms:GetKeyPolicy",
-          "kms:GetKeyRotationStatus",
-          "kms:ListAliases"
-        ]
-        Resource = var.kms_key_arn
-      },
-      {
-        Sid    = "CloudWatchDescribe"
-        Effect = "Allow"
-        Action = [
-          "logs:DescribeLogGroups",
-          "logs:ListTagsForResource"
-        ]
-        Resource = [
-          var.flink_log_group_arn,
-          var.codebuild_build_log_group_arn,
-          var.codebuild_plan_log_group_arn,
-          var.codebuild_apply_log_group_arn
-        ]
-      },
-      {
-        Sid    = "SecretsManagerDescribe"
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:DescribeSecret",
-          "secretsmanager:GetResourcePolicy"
-        ]
-        Resource = "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:${var.project_name}-${var.environment}-*"
-      },
-      {
-        Sid    = "EventBridgeDescribe"
-        Effect = "Allow"
-        Action = [
-          "events:DescribeRule",
-          "events:ListTargetsByRule",
-          "events:ListTagsForResource"
-        ]
-        Resource = "arn:aws:events:${local.region}:${local.account_id}:rule/${var.project_name}-${var.environment}-*"
-      },
-      {
-        Sid    = "KinesisAnalyticsDescribe"
-        Effect = "Allow"
-        Action = [
-          "kinesisanalyticsv2:DescribeApplication",
-          "kinesisanalyticsv2:ListTagsForResource"
-        ]
-        Resource = "arn:aws:kinesisanalytics:${local.region}:${local.account_id}:application/${var.project_name}-${var.environment}"
-      },
-      {
-        Sid    = "DynamoDBDescribe"
-        Effect = "Allow"
-        Action = [
-          "dynamodb:DescribeTable",
-          "dynamodb:ListTagsOfResource"
-        ]
-        Resource = var.terraform_lock_table_arn
-      }
-    ]
-  })
+# Plan_Stage: AWS managed ReadOnlyAccess covers all Terraform provider read APIs
+resource "aws_iam_role_policy_attachment" "plan_readonly" {
+  role       = aws_iam_role.codebuild_plan.name
+  policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
 }
 
 # Plan_Stage: KMS access for encrypted state
@@ -452,6 +328,33 @@ resource "aws_iam_role_policy" "plan_codebuild" {
           "codebuild:BatchPutCodeCoverages"
         ]
         Resource = "arn:aws:codebuild:${local.region}:${local.account_id}:report-group/${var.project_name}-${var.environment}-plan-*"
+      }
+    ]
+  })
+}
+
+# Plan_Stage: pipeline artifacts bucket (reads source artifacts in, writes tfplan artifact out)
+resource "aws_iam_role_policy" "plan_s3_artifacts" {
+  name = "plan-s3-artifacts-readwrite"
+  role = aws_iam_role.codebuild_plan.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "ArtifactsBucketReadWrite"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:GetObjectVersion",
+          "s3:PutObject",
+          "s3:ListBucket",
+          "s3:GetBucketLocation"
+        ]
+        Resource = [
+          "arn:aws:s3:::${var.pipeline_artifacts_bucket_name}",
+          "arn:aws:s3:::${var.pipeline_artifacts_bucket_name}/*"
+        ]
       }
     ]
   })
@@ -888,6 +791,32 @@ resource "aws_iam_role_policy" "apply_codebuild" {
   })
 }
 
+# Apply_Stage: pipeline artifacts bucket (reads build artifacts passed by CodePipeline)
+resource "aws_iam_role_policy" "apply_s3_artifacts" {
+  name = "apply-s3-artifacts-read"
+  role = aws_iam_role.codebuild_apply.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "ArtifactsBucketRead"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:GetObjectVersion",
+          "s3:ListBucket",
+          "s3:GetBucketLocation"
+        ]
+        Resource = [
+          "arn:aws:s3:::${var.pipeline_artifacts_bucket_name}",
+          "arn:aws:s3:::${var.pipeline_artifacts_bucket_name}/*"
+        ]
+      }
+    ]
+  })
+}
+
 # =============================================================================
 # Build_Stage CodeBuild Project (Requirements 9.1, 9.2, 9.3, 9.4)
 # =============================================================================
@@ -939,7 +868,7 @@ resource "aws_codebuild_project" "build" {
           commands:
             - echo "Uploading FAT JAR to S3..."
             - export COMMIT_HASH=$${CODEBUILD_RESOLVED_SOURCE_VERSION}
-            - export JAR_FILE=$$(find target -name "*.jar" -not -name "original-*" | head -1)
+            - export JAR_FILE=$(find target -name "*.jar" -not -name "original-*" | head -1)
             - aws s3 cp $${JAR_FILE} s3://$${JAR_BUCKET}/$${FILE_KEY}
             - aws s3 cp $${JAR_FILE} s3://$${JAR_BUCKET}/jars/my-app-$${COMMIT_HASH}.jar
             - echo "Uploaded $${FILE_KEY} and jars/my-app-$${COMMIT_HASH}.jar to $${JAR_BUCKET}"
@@ -986,8 +915,50 @@ resource "aws_codebuild_project" "plan" {
     }
 
     environment_variable {
+      name  = "TF_VAR_project_name"
+      value = var.project_name
+    }
+
+    environment_variable {
       name  = "TF_VAR_environment"
       value = var.environment
+    }
+
+    environment_variable {
+      # Kinesis ARN format: arn:aws:kinesis:region:account:stream/stream-name
+      name  = "TF_VAR_kinesis_stream_name"
+      value = split("/", var.kinesis_stream_arn)[1]
+    }
+
+    environment_variable {
+      # S3 ARN format: arn:aws:s3:::bucket-name
+      name  = "TF_VAR_input_bucket_name"
+      value = split(":::", var.input_bucket_arn)[1]
+    }
+
+    environment_variable {
+      name  = "TF_VAR_iceberg_bucket_name"
+      value = split(":::", var.iceberg_bucket_arn)[1]
+    }
+
+    environment_variable {
+      name  = "TF_VAR_jar_bucket_name"
+      value = var.jar_bucket_id
+    }
+
+    environment_variable {
+      name  = "TF_VAR_pipeline_artifacts_bucket_name"
+      value = var.pipeline_artifacts_bucket_name
+    }
+
+    environment_variable {
+      name  = "TF_VAR_iceberg_database_name"
+      value = var.iceberg_database_name
+    }
+
+    environment_variable {
+      name  = "TF_VAR_iceberg_table_name"
+      value = var.iceberg_table_name
     }
 
     environment_variable {
@@ -1034,9 +1005,9 @@ resource "aws_codebuild_project" "plan" {
             - export TF_ZIP=terraform_$${TF_VERSION}_linux_amd64.zip
             - curl -fsSLO https://releases.hashicorp.com/terraform/$${TF_VERSION}/$${TF_ZIP}
             - curl -fsSLO https://releases.hashicorp.com/terraform/$${TF_VERSION}/terraform_$${TF_VERSION}_SHA256SUMS
-            - grep " $${TF_ZIP}$$" terraform_$${TF_VERSION}_SHA256SUMS > terraform_SHA256SUMS_linux_amd64
+            - grep " $${TF_ZIP}\$" terraform_$${TF_VERSION}_SHA256SUMS > terraform_SHA256SUMS_linux_amd64
             - sha256sum -c terraform_SHA256SUMS_linux_amd64
-            - unzip -o terraform.zip -d /usr/local/bin/
+            - unzip -o $${TF_ZIP} -d /usr/local/bin/
             - terraform --version
         pre_build:
           commands:
@@ -1047,6 +1018,11 @@ resource "aws_codebuild_project" "plan" {
           commands:
             - echo "Running terraform plan with file_key=$TF_VAR_file_key..."
             - terraform plan -input=false -out=tfplan
+            - PLAN_SUMMARY=$(terraform show -no-color tfplan | awk '/^Plan:/{print; exit}')
+            - if [[ -z "$${PLAN_SUMMARY}" ]]; then echo "ERROR - could not parse plan summary"; exit 1; fi
+            - echo "$${PLAN_SUMMARY}"
+            - DESTROY_COUNT=$(echo "$${PLAN_SUMMARY}" | sed -E 's/.* ([0-9]+) to destroy.*/\1/')
+            - if [[ "$${DESTROY_COUNT}" -gt 0 ]]; then echo "ERROR - plan includes $${DESTROY_COUNT} destroy actions"; exit 1; fi
             - echo "Plan complete. Details logged above."
             - echo "Generating human-readable plan output..."
             - terraform show tfplan
@@ -1097,18 +1073,13 @@ resource "aws_codebuild_project" "apply" {
     }
 
     environment_variable {
+      name  = "TF_VAR_project_name"
+      value = var.project_name
+    }
+
+    environment_variable {
       name  = "TF_VAR_environment"
       value = var.environment
-    }
-
-    environment_variable {
-      name  = "TF_VAR_github_repo"
-      value = var.github_repo
-    }
-
-    environment_variable {
-      name  = "TF_VAR_github_branch"
-      value = var.github_branch
     }
 
     environment_variable {
@@ -1145,17 +1116,23 @@ resource "aws_codebuild_project" "apply" {
             - export TF_ZIP=terraform_$${TF_VERSION}_linux_amd64.zip
             - curl -fsSLO https://releases.hashicorp.com/terraform/$${TF_VERSION}/$${TF_ZIP}
             - curl -fsSLO https://releases.hashicorp.com/terraform/$${TF_VERSION}/terraform_$${TF_VERSION}_SHA256SUMS
-            - grep " $${TF_ZIP}$$" terraform_$${TF_VERSION}_SHA256SUMS > terraform_SHA256SUMS_linux_amd64
+            - grep " $${TF_ZIP}\$" terraform_$${TF_VERSION}_SHA256SUMS > terraform_SHA256SUMS_linux_amd64
             - sha256sum -c terraform_SHA256SUMS_linux_amd64
-            - unzip -o terraform.zip -d /usr/local/bin/
+            - unzip -o $${TF_ZIP} -d /usr/local/bin/
             - terraform --version
         pre_build:
           commands:
             - echo "Initializing Terraform..."
             - cd terraform
+            - cp $CODEBUILD_SRC_DIR_plan_output/terraform/tfplan ./tfplan
             - terraform init -input=false -backend-config="bucket=$${TF_STATE_BUCKET}" -backend-config="key=$${TF_STATE_KEY}" -backend-config="region=$${TF_STATE_REGION}" -backend-config="use_lockfile=true" -backend-config="encrypt=true"
         build:
           commands:
+            - PLAN_SUMMARY=$(terraform show -no-color tfplan | awk '/^Plan:/{print; exit}')
+            - if [[ -z "$${PLAN_SUMMARY}" ]]; then echo "ERROR - could not parse plan summary"; exit 1; fi
+            - echo "Plan summary - $${PLAN_SUMMARY}"
+            - DESTROY_COUNT=$(echo "$${PLAN_SUMMARY}" | sed -E 's/.* ([0-9]+) to destroy.*/\1/')
+            - if [[ "$${DESTROY_COUNT}" -gt 0 ]]; then echo "ERROR - plan includes $${DESTROY_COUNT} destroy actions"; exit 1; fi
             - echo "Applying Terraform plan..."
             - terraform apply -input=false -auto-approve tfplan
             - echo "Terraform apply complete."
@@ -1490,15 +1467,16 @@ resource "aws_codepipeline" "main" {
     name = "Apply"
 
     action {
-      name            = "Terraform_Apply"
-      category        = "Build"
-      owner           = "AWS"
-      provider        = "CodeBuild"
-      version         = "1"
-      input_artifacts = ["plan_output"]
+      name             = "Terraform_Apply"
+      category         = "Build"
+      owner            = "AWS"
+      provider         = "CodeBuild"
+      version          = "1"
+      input_artifacts  = ["source_output", "plan_output"]
 
       configuration = {
-        ProjectName = aws_codebuild_project.apply.name
+        ProjectName   = aws_codebuild_project.apply.name
+        PrimarySource = "source_output"
       }
     }
   }
