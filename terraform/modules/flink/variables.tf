@@ -54,12 +54,6 @@ variable "flink_log_group_arn" {
   nullable    = false
 }
 
-variable "flink_log_group_name" {
-  description = "Name of the CloudWatch log group for Flink"
-  type        = string
-  nullable    = false
-}
-
 variable "flink_log_stream_name" {
   description = "Name of the Flink log stream"
   type        = string

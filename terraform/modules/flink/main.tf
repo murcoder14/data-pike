@@ -218,20 +218,24 @@ resource "aws_iam_role_policy" "flink_cloudwatch" {
         Sid    = "CloudWatchLogGroupAccess"
         Effect = "Allow"
         Action = [
+          "logs:CreateLogGroup",
           "logs:CreateLogStream",
           "logs:PutLogEvents",
           "logs:DescribeLogGroups",
           "logs:DescribeLogStreams"
         ]
+        # No Condition here: aws:SourceAccount is only set for cross-service
+        # calls, not direct role calls. Including it would cause implicit deny.
         Resource = [
           var.flink_log_group_arn,
           "${var.flink_log_group_arn}:*"
         ]
-        Condition = {
-          StringEquals = {
-            "aws:SourceAccount" = local.account_id
-          }
-        }
+      },
+      {
+        Sid      = "CloudWatchMetrics"
+        Effect   = "Allow"
+        Action   = ["cloudwatch:PutMetricData"]
+        Resource = "*"
       }
     ]
   })

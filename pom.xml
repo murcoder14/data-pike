@@ -79,13 +79,6 @@
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-connector-aws-kinesis-streams</artifactId>
             <version>${flink.connector.aws.version}</version>
-            <exclusions>
-                <!-- Exclude AWS SDK to avoid conflict with iceberg-aws-bundle -->
-                <exclusion>
-                    <groupId>software.amazon.awssdk</groupId>
-                    <artifactId>*</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
 
         <dependency>
@@ -183,7 +176,9 @@
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
             <version>${logback.version}</version>
-            <scope>runtime</scope>
+            <!-- provided: available locally/tests via classpath, excluded from fat JAR.
+                 MSF Flink 2.x provides Log4j2; bundling Logback causes SLF4J conflicts. -->
+            <scope>provided</scope>
         </dependency>
 
         <dependency>
@@ -274,6 +269,22 @@
                                         <exclude>META-INF/*.SF</exclude>
                                         <exclude>META-INF/*.DSA</exclude>
                                         <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                                <!-- Exclude Logback from the fat JAR.
+                                     MSF Flink 2.x ships Log4j2 as the SLF4J binding.
+                                     Bundling Logback causes two SLF4J providers on the
+                                     classpath, which breaks class loading before main(). -->
+                                <filter>
+                                    <artifact>ch.qos.logback:logback-classic</artifact>
+                                    <excludes>
+                                        <exclude>**</exclude>
+                                    </excludes>
+                                </filter>
+                                <filter>
+                                    <artifact>ch.qos.logback:logback-core</artifact>
+                                    <excludes>
+                                        <exclude>**</exclude>
                                     </excludes>
                                 </filter>
                             </filters>

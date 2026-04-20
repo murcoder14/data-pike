@@ -5,6 +5,7 @@
 # Requirements: 4.1, 4.2, 4.3, 5.1, 5.2, 5.3
 
 data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
 
 # =============================================================================
 # Kinesis Data Stream
@@ -82,9 +83,9 @@ data "aws_iam_policy_document" "eventbridge_assume_role" {
     }
 
     condition {
-      test     = "StringEquals"
-      variable = "aws:SourceAccount"
-      values   = [data.aws_caller_identity.current.account_id]
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = ["arn:aws:events:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:rule/*"]
     }
   }
 }
@@ -97,6 +98,15 @@ data "aws_iam_policy_document" "eventbridge_kinesis" {
       "kinesis:PutRecords",
     ]
     resources = [aws_kinesis_stream.main.arn]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "kms:GenerateDataKey",
+      "kms:Decrypt",
+    ]
+    resources = [var.kms_key_arn]
   }
 }
 

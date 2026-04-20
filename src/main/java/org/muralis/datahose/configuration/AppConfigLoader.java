@@ -6,9 +6,15 @@ import org.muralis.datahose.sink.IcebergSink;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
@@ -27,13 +33,23 @@ public final class AppConfigLoader {
     }
 
     public static AppConfig load(String[] args) {
+        return load(args, Collections.emptyMap());
+    }
+
+    /**
+     * Load config with MSF GlobalJobParameters merged in.
+     * In MSF Flink 2.x, runtime properties from {@code environment_properties} are injected
+     * as Flink GlobalJobParameters, not as CLI args. Pass
+     * {@code env.getConfig().getGlobalJobParameters().toMap()} here.
+     */
+    public static AppConfig load(String[] args, Map<String, String> globalParams) {
         Properties defaults = loadClasspathProperties(DEFAULT_PROPERTIES_FILE);
         ExecutionMode mode = resolveMode(args, defaults);
 
         if (mode == ExecutionMode.LOCAL) {
             return loadLocal(defaults);
         }
-        return loadCloud(args, defaults);
+        return loadCloud(args, defaults, globalParams);
     }
 
     private static AppConfig loadLocal(Properties defaults) {
@@ -74,37 +90,56 @@ public final class AppConfigLoader {
     }
 
     static AppConfig loadCloud(String[] args, Properties defaults) {
+        return loadCloud(args, defaults, Collections.emptyMap());
+    }
+
+    static AppConfig loadCloud(String[] args, Properties defaults, Map<String, String> globalParams) {
         Properties cloud = merge(defaults, loadClasspathProperties("application-cloud.properties"));
 
-        // MSF injects runtime properties as --PropertyGroupId.key=value args
-        ParameterTool params = ParameterTool.fromArgs(args);
-        Map<String, Map<String, String>> appProperties = extractPropertyGroups(params);
-
-        String streamArn;
-        String awsRegion;
         String initialPosition = getOptionalEnvOrProperty(cloud,
                 "KINESIS_INITIAL_POSITION", "kinesis.initial.position", "LATEST");
 
+        String streamArn;
+        String awsRegion;
         String warehousePath;
         String catalogName;
         String tableName;
 
-        if (appProperties.isEmpty()) {
-            LOG.info("No runtime property groups found in args. Falling back to env/properties.");
-            streamArn = getRequiredEnvOrProperty(cloud, "KINESIS_STREAM_ARN", "kinesis.stream.arn");
-            awsRegion = getRequiredEnvOrProperty(cloud, "AWS_REGION", "kinesis.aws.region");
-            warehousePath = getRequiredEnvOrProperty(cloud, "ICEBERG_WAREHOUSE_PATH", "iceberg.warehouse.path");
-            catalogName = getRequiredEnvOrProperty(cloud, "ICEBERG_CATALOG_NAME", "iceberg.catalog.name");
-            tableName = getRequiredEnvOrProperty(cloud, "ICEBERG_TABLE_NAME", "iceberg.table.name");
-        } else {
-            Map<String, String> kinesisProps = getPropertyGroup(appProperties, "KinesisSource");
-            streamArn = getRequiredProperty(kinesisProps, "stream.arn");
-            awsRegion = getRequiredProperty(kinesisProps, "aws.region");
-
-            Map<String, String> icebergProps = getPropertyGroup(appProperties, "IcebergSink");
+        // Strategy 1: Read /etc/flink/application_properties.json
+        // MSF writes this file before starting the JM — works for all MSF versions.
+        Map<String, Map<String, String>> msfProps = readApplicationPropertiesFile();
+        if (msfProps.containsKey("KinesisSource")) {
+            LOG.info("Reading config from /etc/flink/application_properties.json");
+            Map<String, String> kinesisProps = msfProps.get("KinesisSource");
+            Map<String, String> icebergProps = msfProps.getOrDefault("IcebergSink", Collections.emptyMap());
+            streamArn     = getRequiredProperty(kinesisProps, "stream.arn");
+            awsRegion     = getRequiredProperty(kinesisProps, "aws.region");
             warehousePath = getRequiredProperty(icebergProps, "warehouse.path");
-            catalogName = getRequiredProperty(icebergProps, "catalog.name");
-            tableName = getRequiredProperty(icebergProps, "table.name");
+            catalogName   = getRequiredProperty(icebergProps, "catalog.name");
+            tableName     = getRequiredProperty(icebergProps, "table.name");
+        } else {
+            // Strategy 2: CLI args in property-group format (--KinesisSource.stream.arn=...)
+            ParameterTool argParams = ParameterTool.fromArgs(args);
+            Map<String, Map<String, String>> argGroups = extractPropertyGroups(argParams);
+
+            if (argGroups.containsKey("KinesisSource")) {
+                LOG.info("Reading config from CLI args (property-group format)");
+                Map<String, String> kinesisProps = argGroups.get("KinesisSource");
+                Map<String, String> icebergProps = getPropertyGroup(argGroups, "IcebergSink");
+                streamArn     = getRequiredProperty(kinesisProps, "stream.arn");
+                awsRegion     = getRequiredProperty(kinesisProps, "aws.region");
+                warehousePath = getRequiredProperty(icebergProps, "warehouse.path");
+                catalogName   = getRequiredProperty(icebergProps, "catalog.name");
+                tableName     = getRequiredProperty(icebergProps, "table.name");
+            } else {
+                // Strategy 3: env vars / property files (local testing / CI)
+                LOG.info("No MSF runtime properties found; falling back to env vars / property files");
+                streamArn     = getRequiredEnvOrProperty(cloud, "KINESIS_STREAM_ARN", "kinesis.stream.arn");
+                awsRegion     = getRequiredEnvOrProperty(cloud, "AWS_REGION", "kinesis.aws.region");
+                warehousePath = getRequiredEnvOrProperty(cloud, "ICEBERG_WAREHOUSE_PATH", "iceberg.warehouse.path");
+                catalogName   = getRequiredEnvOrProperty(cloud, "ICEBERG_CATALOG_NAME", "iceberg.catalog.name");
+                tableName     = getRequiredEnvOrProperty(cloud, "ICEBERG_TABLE_NAME", "iceberg.table.name");
+            }
         }
 
         AppConfig.KinesisConfig kinesisConfig = new AppConfig.KinesisConfig(
@@ -119,6 +154,35 @@ public final class AppConfigLoader {
                 warehousePath, catalogName, tableName);
 
         return new AppConfig(ExecutionMode.CLOUD, kinesisConfig, rabbitMqConfig, icebergConfig);
+    }
+
+    /**
+     * Reads /etc/flink/application_properties.json written by MSF before JM startup.
+     * Format: [{"PropertyGroupId":"GroupId","PropertyMap":{"key":"value",...}}]
+     * Returns empty map if the file does not exist (non-MSF environments).
+     */
+    static Map<String, Map<String, String>> readApplicationPropertiesFile() {
+        File propsFile = new File("/etc/flink/application_properties.json");
+        if (!propsFile.exists()) {
+            LOG.info("MSF application_properties.json not found (not running on MSF)");
+            return Collections.emptyMap();
+        }
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode root = mapper.readTree(propsFile);
+            Map<String, Map<String, String>> result = new HashMap<>();
+            for (JsonNode group : root) {
+                String groupId = group.get("PropertyGroupId").asText();
+                Map<String, String> props = new HashMap<>();
+                group.get("PropertyMap").fields().forEachRemaining(e -> props.put(e.getKey(), e.getValue().asText()));
+                result.put(groupId, props);
+            }
+            LOG.info("Loaded MSF property groups from application_properties.json: {}", result.keySet());
+            return result;
+        } catch (IOException e) {
+            LOG.warn("Failed to read application_properties.json: {}", e.getMessage());
+            return Collections.emptyMap();
+        }
     }
 
     /**

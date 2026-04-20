@@ -5,13 +5,13 @@ A streaming data pipeline built with Apache Flink on AWS Managed Service for Apa
 ## Architecture
 
 ```
-S3 (file upload) → EventBridge → Kinesis Data Stream → Apache Flink → Iceberg (via Glue Catalog)
+S3 (file upload) → EventBridge → Kinesis Data Stream → Apache Flink (MSF) → Iceberg (via Glue Catalog)
 ```
 
-1. Files land in an S3 input bucket
-2. EventBridge captures `Object Created` events and routes them to Kinesis
-3. Flink consumes notifications from Kinesis, reads the files from S3, detects the format, and parses them
-4. Processed records are written to Apache Iceberg tables backed by S3 and cataloged in AWS Glue
+1. A file lands in the S3 input bucket
+2. S3 emits an `Object Created` event to EventBridge; an EventBridge rule routes it to Kinesis Data Stream
+3. Flink (running on Managed Service for Apache Flink) consumes the Kinesis notification, reads the original file from S3, detects its format, and parses it
+4. Processed temperature summary records are written to an Apache Iceberg table backed by S3 and cataloged in AWS Glue
 
 ## Supported File Formats
 
@@ -22,19 +22,21 @@ S3 (file upload) → EventBridge → Kinesis Data Stream → Apache Flink → Ic
 ## Tech Stack
 
 - Java 17
-- Apache Flink 2.2.0
-- Apache Iceberg 1.10.1
-- Apache Avro 1.12.1
-- Jackson 2.21.2
-- AWS SDK (Kinesis Analytics V2, S3)
+- Apache Flink 2.2.0 (`flink-connector-aws-kinesis-streams` 6.0.0-2.0)
+- Apache Iceberg 1.10.1 (Glue catalog in cloud, JDBC catalog locally)
+- Lombok 1.18.44
+- Jackson (transitive via Iceberg)
+- AWS SDK v2 (Kinesis, S3)
 - Terraform (infrastructure as code)
-- CodePipeline / CodeBuild (CI/CD)
 
 ## Prerequisites
 
 - Java 17+
 - Maven 3.8+
-- AWS CLI configured with appropriate credentials
+- AWS CLI configured with appropriate credentials. Set your profile before running any AWS or Terraform commands:
+  ```bash
+  export AWS_PROFILE=yourprofile
+  ```
 - Terraform >= 1.5.0
 
 ## Build
@@ -51,57 +53,57 @@ mvn test
 
 ## Cloud Runtime Properties
 
-Managed Flink must provide two environment property groups:
+On Managed Service for Apache Flink, the application reads its configuration from `/etc/flink/application_properties.json`, which MSF writes before the Job Manager starts. Configure the following property groups in the MSF application's `EnvironmentProperties`:
 
-- `KinesisSource`
-	- `stream.arn`
-	- `aws.region`
-- `IcebergSink`
-	- `warehouse.path`
-	- `catalog.name`
-	- `table.name`
+**`KinesisSource`**
+| Key | Description |
+|---|---|
+| `stream.arn` | Full ARN of the Kinesis Data Stream |
+| `aws.region` | AWS region (e.g. `us-east-1`) |
 
-If those property groups are absent, the application falls back to standard environment variables or classpath properties:
+**`IcebergSink`**
+| Key | Description |
+|---|---|
+| `warehouse.path` | S3 URI for the Iceberg warehouse (e.g. `s3://bucket/warehouse`) |
+| `catalog.name` | Iceberg catalog name (e.g. `glue_catalog`) |
+| `table.name` | Fully-qualified table name (e.g. `weather_data_hub.temperature`) |
 
-```bash
+If `application_properties.json` is absent (non-MSF environments), the application falls back to CLI args in `--KinesisSource.stream.arn=<value>` format, then to environment variables:
+
+```
 KINESIS_STREAM_ARN
 AWS_REGION
 ICEBERG_WAREHOUSE_PATH
 ICEBERG_CATALOG_NAME
 ICEBERG_TABLE_NAME
-KINESIS_INITIAL_POSITION
 ```
 
 ## Local Mode (RabbitMQ Streams + Local Iceberg)
 
-Trino compatibility note:
-local mode uses an Iceberg JDBC catalog backed by PostgreSQL.
-Docker Compose starts Postgres and both Flink and Trino connect to it
-for Iceberg metadata, while table data stays in the local warehouse path.
-Host-side defaults in application-local.properties point at the compose-exposed
-Postgres port 5433; in-container services override that with port 5432.
+Local mode replaces Kinesis with RabbitMQ Streams as the source and uses an Iceberg JDBC catalog backed by PostgreSQL. Docker Compose starts all required services. Trino connects to the same catalog for ad-hoc queries.
 
-Run preflight checks (tools, Docker daemon, and ports):
+Run preflight checks (tools, Docker daemon, ports):
 
 ```bash
 ./scripts/local-preflight.sh
 ```
 
-Create your local environment file for credentials and runtime overrides:
-
-```bash
-cp .env.local.example .env.local
-```
-
-Edit `.env.local` as needed for your local RabbitMQ/Postgres credentials.
-
-Start local stack and submit Flink job:
+Start the local stack and submit the Flink job:
 
 ```bash
 ./scripts/local-up.sh
 ```
 
-Send test messages and verify Iceberg output:
+Publish test files to RabbitMQ:
+
+```bash
+./scripts/local-publish-json.sh
+./scripts/local-publish-xml.sh
+./scripts/local-publish-csv.sh
+./scripts/local-publish-tsv.sh
+```
+
+Run the full smoke test (publishes files and verifies Iceberg output):
 
 ```bash
 ./scripts/local-smoke-test.sh
@@ -140,27 +142,59 @@ Stop and purge local data:
 
 ## Infrastructure
 
-All Terraform configuration lives in the `terraform/` directory. See [terraform/README.md](terraform/README.md) for detailed deployment instructions, including state backend bootstrap, multi-environment setup, and smoke testing.
+All Terraform configuration lives in the `terraform/` directory. See [terraform/README.md](terraform/README.md) for full deployment instructions, including state backend bootstrap, first-time JAR upload, and smoke testing.
+
+## Deploying a New JAR Version
+
+MSF pins the exact S3 object version of the JAR at deploy time. Uploading a new JAR to S3 alone is not enough — you must explicitly call `update-application` with the new `ObjectVersionId`:
+
+```bash
+# 1. Build and upload
+mvn clean package -DskipTests
+aws s3 cp target/data-pike-1.0-SNAPSHOT.jar s3://<jar-bucket>/jars/data-pike-1.0-SNAPSHOT.jar
+
+# 2. Get the new S3 version ID
+NEW_VER=$(aws s3api head-object \
+  --bucket <jar-bucket> --key jars/data-pike-1.0-SNAPSHOT.jar \
+  --query "VersionId" --output text)
+
+# 3. Get the current application version
+APP_VER=$(aws kinesisanalyticsv2 describe-application \
+  --application-name <app-name> \
+  --query "ApplicationDetail.ApplicationVersionId" --output text)
+
+# 4. Update the application to pin the new JAR version
+aws kinesisanalyticsv2 update-application \
+  --application-name <app-name> \
+  --current-application-version-id "$APP_VER" \
+  --application-configuration-update \
+  "{\"ApplicationCodeConfigurationUpdate\":{\"CodeContentTypeUpdate\":\"ZIPFILE\",\"CodeContentUpdate\":{\"S3ContentLocationUpdate\":{\"FileKeyUpdate\":\"jars/data-pike-1.0-SNAPSHOT.jar\",\"ObjectVersionUpdate\":\"$NEW_VER\"}}}}"
+
+# 5. Start the application
+aws kinesisanalyticsv2 start-application \
+  --application-name <app-name> \
+  --run-configuration '{}'
+```
 
 ## Project Structure
 
 ```
 src/main/java/org/muralis/datahose/
 ├── Application.java                  # Flink pipeline entry point
+├── configuration/                    # AppConfigLoader — reads MSF/env/CLI config
 ├── model/                            # Data models (S3Notification, WeatherObservation, etc.)
-├── processing/                       # Parsers, format detection, file reading, summarization
-├── sink/                             # Iceberg sink
-└── source/                           # Kinesis message source
+├── processing/                       # Format detection, parsers, S3 file reading, summarization
+├── sink/                             # IcebergSink — writes to Iceberg via Glue catalog
+└── source/                           # KinesisMessageSource, RabbitMqStreamsSourceFunction
 
 terraform/
 ├── modules/
-│   ├── cicd/                         # CodeBuild + CodePipeline
-│   ├── flink/                        # Managed Flink application + IAM
-│   ├── kinesis/                      # Kinesis Data Stream + EventBridge
-│   ├── monitoring/                   # CloudWatch log groups
-│   ├── networking/                   # VPC, subnets, security groups, endpoints
-│   └── storage/                      # KMS, S3 buckets, Glue Catalog
-└── scripts/                          # Bootstrap and deployment helpers
+│   ├── flink/                        # Managed Flink application + IAM role + VPC config
+│   ├── kinesis/                      # Kinesis Data Stream + EventBridge rule/target + IAM
+│   ├── monitoring/                   # CloudWatch log group
+│   ├── networking/                   # VPC, private subnets, security groups, VPC endpoints
+│   └── storage/                      # KMS CMK, S3 buckets (input/iceberg/jar), Glue Catalog
+└── scripts/                          # Bootstrap, deploy, and smoke test helpers
 ```
 
 ## License

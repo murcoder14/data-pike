@@ -80,7 +80,6 @@ module "flink" {
   iceberg_bucket_arn      = module.storage.iceberg_bucket_arn
   jar_bucket_arn          = module.storage.jar_bucket_arn
   flink_log_group_arn     = module.monitoring.flink_log_group_arn
-  flink_log_group_name    = module.monitoring.flink_log_group_name
   flink_log_stream_name   = module.monitoring.flink_log_stream_name
   private_subnet_ids      = module.networking.private_subnet_ids
   flink_security_group_id = module.networking.flink_security_group_id

@@ -371,41 +371,21 @@ public class IcebergSink implements Sink<ProcessedRecord> {
                 return rows;
             }
 
-            Set<String> existingRowKeys = new HashSet<>();
+            Set<String> existingDates = new HashSet<>();
             try (CloseableIterable<org.apache.iceberg.data.Record> existingRows = IcebergGenerics.read(table).build()) {
                 for (org.apache.iceberg.data.Record existingRow : existingRows) {
-                    existingRowKeys.add(rowKey(table.schema(), existingRow));
+                    existingDates.add(String.valueOf(existingRow.getField("date")));
                 }
             }
 
             List<GenericRecord> filteredRows = new ArrayList<>();
             for (GenericRecord row : rows) {
-                String rowKey = rowKey(table.schema(), row);
-                if (existingRowKeys.add(rowKey)) {
+                String date = String.valueOf(row.get("date"));
+                if (existingDates.add(date)) {
                     filteredRows.add(row);
                 }
             }
             return filteredRows;
-        }
-
-        private String rowKey(Schema schema, org.apache.iceberg.data.Record row) {
-            StringBuilder keyBuilder = new StringBuilder();
-            schema.columns().forEach(field -> keyBuilder
-                    .append(field.name())
-                    .append('=')
-                    .append(String.valueOf(row.getField(field.name())))
-                    .append('|'));
-            return keyBuilder.toString();
-        }
-
-        private String rowKey(Schema schema, GenericRecord row) {
-            StringBuilder keyBuilder = new StringBuilder();
-            schema.columns().forEach(field -> keyBuilder
-                    .append(field.name())
-                    .append('=')
-                    .append(String.valueOf(row.get(field.name())))
-                    .append('|'));
-            return keyBuilder.toString();
         }
 
         @Override

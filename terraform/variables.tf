@@ -60,24 +60,6 @@ variable "kinesis_stream_name" {
   nullable    = false
 }
 
-variable "github_repo" {
-  description = "GitHub repository for CI/CD source (e.g., org/repo-name)"
-  type        = string
-  nullable    = false
-
-  validation {
-    condition     = can(regex("^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$", var.github_repo))
-    error_message = "Must be in the format 'owner/repository'."
-  }
-}
-
-variable "github_branch" {
-  description = "Branch to trigger pipeline"
-  type        = string
-  default     = "main"
-  nullable    = false
-}
-
 variable "file_key" {
   description = "S3 object key for the FAT JAR (changes trigger UpdateApplication)"
   type        = string
@@ -126,13 +108,6 @@ variable "iceberg_bucket_name" {
 
 variable "jar_bucket_name" {
   description = "Name of the S3 JAR Bucket (defaults to project_name-environment-jar)"
-  type        = string
-  default     = ""
-  nullable    = false
-}
-
-variable "pipeline_artifacts_bucket_name" {
-  description = "Name of the S3 pipeline artifacts bucket (defaults to project_name-environment-pipeline-artifacts)"
   type        = string
   default     = ""
   nullable    = false

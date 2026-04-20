@@ -38,7 +38,7 @@ public class RabbitMessageFileContentAdapter extends RichFlatMapFunction<String,
 
         S3Notification syntheticNotification = new S3Notification(
                 "rabbitmq://" + streamName,
-                "message-" + id + ".json",
+            "message-" + id + ".payload",
                 Instant.now().toString(),
                 "rabbitmq-streams");
 

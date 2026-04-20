@@ -4,7 +4,7 @@ This directory contains the Terraform configuration for deploying the Flink Data
 
 ## Architecture Overview
 
-The infrastructure provisions a streaming data pipeline that ingests files from S3, routes notifications through EventBridge and Kinesis, processes them via Apache Flink on Managed Service for Flink, and writes output to Apache Iceberg tables. A CI/CD pipeline automates build, plan, approval, and deployment.
+The infrastructure provisions a streaming data pipeline that ingests files from S3, routes notifications through EventBridge and Kinesis, processes them via Apache Flink on Managed Service for Flink, and writes output to Apache Iceberg tables.
 
 ## Module Structure
 
@@ -20,20 +20,21 @@ terraform/
 ├── terraform.tfvars.dev        # Dev environment variable values
 ├── scripts/                    # Helper scripts (bootstrap, deploy, smoke test)
 └── modules/
-    ├── monitoring/             # CloudWatch log groups (Flink, CodeBuild stages)
-    ├── storage/                # KMS CMK, S3 buckets (Input, Iceberg, JAR), Glue Catalog
+    ├── monitoring/             # CloudWatch log group (Flink)
+    ├── storage/                # KMS CMK, S3 buckets (input, iceberg, jar), Glue Catalog
     ├── networking/             # VPC, private subnets, security groups, VPC endpoints
-    ├── kinesis/                # Kinesis Data Stream, EventBridge rule/target
-    ├── flink/                  # Managed Flink application, execution IAM role
-    └── cicd/                   # CodeBuild projects, CodePipeline, CI/CD IAM roles
+    ├── kinesis/                # Kinesis Data Stream, EventBridge rule/target, IAM role
+    └── flink/                  # Managed Flink application, IAM execution role, VPC config
 ```
 
 ## Prerequisites
 
 - **Terraform** >= 1.5.0, < 2.0.0
-- **AWS CLI** configured with credentials that have sufficient permissions
+- **AWS CLI** configured with credentials that have sufficient permissions. Set your profile before running any AWS or Terraform commands:
+  ```bash
+  export AWS_PROFILE=yourprofile
+  ```
 - **AWS Account** with access to create the resources listed above
-- **GitHub repository** containing the Flink application source code
 
 ## Deployment Steps
 
@@ -118,8 +119,6 @@ environment         = "dev"
 aws_region          = "us-east-1"
 vpc_cidr            = "10.0.0.0/16"
 kinesis_shard_count = 1
-github_repo         = "your-org/your-repo"
-github_branch       = "main"
 file_key            = "jars/my-app-latest.jar"
 ```
 
@@ -141,8 +140,6 @@ file_key            = "jars/my-app-latest.jar"
 | `log_retention_days` | No | `1` | CloudWatch log retention in days |
 | `enable_cloudwatch_logs_kms` | No | `false` | Enable KMS encryption on CloudWatch log groups |
 | `enable_vpc_flow_logs` | No | `false` | Enable VPC flow logs (recommended true in prod) |
-| `github_repo` | **Yes** | — | GitHub repository in `owner/repo` format |
-| `github_branch` | No | `main` | Branch that triggers the CI/CD pipeline |
 | `file_key` | **Yes** | — | S3 key for the FAT JAR (must end in `.jar`) |
 
 ### 3. Plan and Apply (Dev, Staged)
@@ -181,11 +178,17 @@ terraform apply -input=false tfplan
 
 ### 4. Post-Deployment Checks
 
-After `terraform apply` completes:
+After `terraform apply` completes, verify the Flink application starts. Check the Managed Service for Apache Flink console to confirm the application transitions to `RUNNING` status, or run:
 
-1. **Confirm the CodeConnections connection.** The GitHub connection is created in `PENDING` status. Go to the AWS Console → Developer Tools → Settings → Connections, find the connection, and complete the GitHub authorization handshake.
+```bash
+aws kinesisanalyticsv2 describe-application \
+  --application-name "$(terraform output -raw flink_application_name)" \
+  --query 'ApplicationDetail.ApplicationStatus' --output text
+```
 
-2. **Verify the Flink application starts.** Check the Managed Service for Apache Flink console to confirm the application transitions to `RUNNING` status.
+## Deploying a New JAR Version
+
+MSF pins the exact S3 object version of the JAR at deploy time. Uploading a new JAR to S3 alone is not sufficient — you must call `update-application` with the new `ObjectVersionId`. See the [root README](../README.md#deploying-a-new-jar-version) for the full command sequence.
 
 ## Deploying to Multiple Environments
 
@@ -320,16 +323,6 @@ rm -f tfplan
 
 After cleanup, you can redeploy from scratch by following the deployment steps from Step 1.
 
-## CI/CD Pipeline Flow
-
-Once the CodeConnections connection is confirmed and the pipeline triggers:
-
-1. **Source** — Pulls code from GitHub on push to the configured branch
-2. **Build** — Compiles the Java application with Maven, produces a FAT JAR, uploads to the JAR bucket
-3. **Plan** — Runs `terraform plan` detecting the `file_key` variable change
-4. **Approval** — Pauses for manual human review of the plan
-5. **Apply** — Runs `terraform apply` with the approved plan, which triggers an `UpdateApplication` on the Flink app
-
 ## Useful Outputs
 
 After applying, key outputs include:
@@ -342,5 +335,6 @@ terraform output iceberg_bucket_name      # Iceberg table storage
 terraform output jar_bucket_name          # FAT JAR upload destination
 terraform output iceberg_warehouse_path   # Iceberg warehouse S3 path
 terraform output glue_database_name       # Glue Catalog database
-terraform output codepipeline_name        # CI/CD pipeline name
+terraform output glue_table_name          # Glue Catalog table
+terraform output flink_log_group_name     # CloudWatch log group for tail/query
 ```

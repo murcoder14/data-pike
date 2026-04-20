@@ -165,21 +165,6 @@ output "flink_log_group_arn" {
   value       = module.monitoring.flink_log_group_arn
 }
 
-output "codebuild_build_log_group_name" {
-  description = "Name of the CloudWatch log group for the Build Stage CodeBuild project"
-  value       = module.monitoring.codebuild_build_log_group_name
-}
-
-output "codebuild_plan_log_group_name" {
-  description = "Name of the CloudWatch log group for the Plan Stage CodeBuild project"
-  value       = module.monitoring.codebuild_plan_log_group_name
-}
-
-output "codebuild_apply_log_group_name" {
-  description = "Name of the CloudWatch log group for the Apply Stage CodeBuild project"
-  value       = module.monitoring.codebuild_apply_log_group_name
-}
-
 # --- Flink Execution Role Outputs ---
 
 output "flink_execution_role_arn" {

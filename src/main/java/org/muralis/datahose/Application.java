@@ -12,6 +12,7 @@ import org.muralis.datahose.processing.RabbitMessageFileContentAdapter;
 import org.muralis.datahose.processing.S3FileReader;
 import org.muralis.datahose.sink.IcebergSink;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.connector.kinesis.source.KinesisStreamsSource;
 import org.apache.flink.core.execution.CheckpointingMode;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -20,6 +21,8 @@ import org.muralis.datahose.source.KinesisMessageSource;
 import org.muralis.datahose.source.RabbitMqStreamsSourceFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+
 
 /**
  * Entry point for the Flink streaming data pipeline.
@@ -41,12 +44,26 @@ public class Application {
     static final long CHECKPOINT_INTERVAL_MS = 60_000L;
 
     public static void main(String[] args) throws Exception {
+        try {
+            run(args);
+        } catch (Throwable t) {
+            // Print the full cause chain to stderr — captured by MSF Job Manager logs
+            // even before CloudWatch logging is bootstrapped.
+            System.err.println("=== FATAL STARTUP ERROR ===");
+            t.printStackTrace(System.err);
+            System.err.flush();
+            throw t;
+        }
+    }
+
+    static void run(String[] args) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+
+        // MSF runtime properties are read from /etc/flink/application_properties.json
+        // inside AppConfigLoader.loadCloud() via readApplicationPropertiesFile().
         AppConfig config = AppConfigLoader.load(args);
 
         LOG.info("Starting Flink Data Pipeline in {} mode", config.mode());
-
-        // --- StreamExecutionEnvironment ---
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
         // --- Checkpointing for fault tolerance ---
         env.enableCheckpointing(CHECKPOINT_INTERVAL_MS, CheckpointingMode.EXACTLY_ONCE);
@@ -88,7 +105,8 @@ public class Application {
                 return env.fromSource(
                                 kinesisSource,
                                 WatermarkStrategy.noWatermarks(),
-                                "KinesisSource");
+                                "KinesisSource",
+                                TypeInformation.of(String.class));
     }
 
         static DataStream<S3FileContent> buildFileContents(DataStream<String> rawMessages, AppConfig config) {

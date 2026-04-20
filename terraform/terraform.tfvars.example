@@ -17,19 +17,14 @@ kinesis_shard_count = 1
 # kinesis_stream_name = ""  # Defaults to ${project_name}-${environment}
 
 # --- S3 Buckets (all optional — defaults to ${project_name}-${environment}-<suffix>) ---
-# input_bucket_name              = ""
-# iceberg_bucket_name            = ""
-# jar_bucket_name                = ""
-# pipeline_artifacts_bucket_name = ""
+# input_bucket_name   = ""
+# iceberg_bucket_name = ""
+# jar_bucket_name     = ""
 
 # --- Iceberg / Glue ---
 iceberg_database_name = "flink_pipeline"
 iceberg_table_name    = "temperature"
 iceberg_catalog_name  = "glue_catalog"
-
-# --- CI/CD ---
-github_repo   = "your-org/your-repo"
-github_branch = "main"
 
 # --- Flink Application ---
 file_key = "jars/my-app-latest.jar"

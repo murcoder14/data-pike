@@ -11,13 +11,13 @@ BACKEND_FILE="$TERRAFORM_DIR/backend.tf"
 BACKEND_DISABLED_FILE="$TERRAFORM_DIR/backend.tf.disabled"
 TFVARS_FILE="${1:-$TERRAFORM_DIR/terraform.tfvars.dev}"
 
-if [[ ! -f "$BACKEND_FILE" ]]; then
-  echo "Missing $BACKEND_FILE"
-  exit 1
+if [[ -f "$BACKEND_DISABLED_FILE" && ! -f "$BACKEND_FILE" ]]; then
+  echo "Recovering backend.tf from a previous interrupted run..."
+  mv "$BACKEND_DISABLED_FILE" "$BACKEND_FILE"
 fi
 
-if [[ -f "$BACKEND_DISABLED_FILE" ]]; then
-  echo "Found $BACKEND_DISABLED_FILE. Please resolve previous interrupted bootstrap first."
+if [[ ! -f "$BACKEND_FILE" ]]; then
+  echo "Missing $BACKEND_FILE"
   exit 1
 fi
 
@@ -49,11 +49,14 @@ cd "$TERRAFORM_DIR"
 echo "Temporarily disabling backend config..."
 mv "$BACKEND_FILE" "$BACKEND_DISABLED_FILE"
 
+echo "Clearing any cached backend state from previous runs..."
+rm -rf .terraform .terraform.lock.hcl terraform.tfstate terraform.tfstate.backup
+
 echo "Initializing with local state for bootstrap..."
 terraform init -reconfigure -backend=false -input=false
 
 echo "Creating state bucket and lock table resources..."
-terraform apply -input=false -auto-approve \
+terraform apply -input=false -auto-approve -var-file="$TFVARS_FILE" \
   -target=aws_s3_bucket.terraform_state \
   -target=aws_s3_bucket_versioning.terraform_state \
   -target=aws_s3_bucket_server_side_encryption_configuration.terraform_state \
