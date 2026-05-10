@@ -14,7 +14,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
@@ -62,7 +61,7 @@ public final class AppConfigLoader {
         String virtualHost = getOptionalEnvOrProperty(local, "RABBITMQ_VHOST", "rabbitmq.virtual.host", "/");
         String streamName = getRequiredEnvOrProperty(local, "RABBITMQ_STREAM_NAME", "rabbitmq.stream.name");
         String consumerName = getOptionalEnvOrProperty(
-            local, "RABBITMQ_CONSUMER_NAME", "rabbitmq.consumer.name", "data-pike-local-consumer");
+                local, "RABBITMQ_CONSUMER_NAME", "rabbitmq.consumer.name", "data-pike-local-consumer");
         long pollTimeoutMs = Long.parseLong(getOptionalEnvOrProperty(
                 local, "RABBITMQ_POLL_TIMEOUT_MS", "rabbitmq.poll.timeout.ms", "1000"));
 
@@ -70,21 +69,21 @@ public final class AppConfigLoader {
         String catalogName = getOptionalEnvOrProperty(local, "ICEBERG_CATALOG_NAME", "iceberg.catalog.name", "local_catalog");
         String tableName = getRequiredEnvOrProperty(local, "ICEBERG_TABLE_NAME", "iceberg.table.name");
         String jdbcUri = getOptionalEnvOrProperty(
-            local, "ICEBERG_JDBC_URI", "iceberg.jdbc.uri",
-            "jdbc:postgresql://localhost:5432/iceberg_catalog");
+                local, "ICEBERG_JDBC_URI", "iceberg.jdbc.uri",
+                "jdbc:postgresql://localhost:5432/iceberg_catalog");
         String jdbcUser = getOptionalEnvOrProperty(
-            local, "ICEBERG_JDBC_USER", "iceberg.jdbc.user", "iceberg_user");
+                local, "ICEBERG_JDBC_USER", "iceberg.jdbc.user", "iceberg_user");
         String jdbcPassword = getOptionalEnvOrProperty(
-            local, "ICEBERG_JDBC_PASSWORD", "iceberg.jdbc.password", "iceberg_password");
+                local, "ICEBERG_JDBC_PASSWORD", "iceberg.jdbc.password", "iceberg_password");
 
         AppConfig.RabbitMqConfig rabbitMqConfig = new AppConfig.RabbitMqConfig(
-            host, port, username, password, virtualHost, streamName, consumerName, pollTimeoutMs);
+                host, port, username, password, virtualHost, streamName, consumerName, pollTimeoutMs);
 
         AppConfig.KinesisConfig kinesisConfig = new AppConfig.KinesisConfig(
                 "", "", KinesisSourceConfigOptions.InitialPosition.LATEST);
 
         IcebergSink.IcebergConfig icebergConfig = IcebergSink.IcebergConfig.localJdbc(
-            warehousePath, catalogName, tableName, jdbcUri, jdbcUser, jdbcPassword);
+                warehousePath, catalogName, tableName, jdbcUri, jdbcUser, jdbcPassword);
 
         return new AppConfig(ExecutionMode.LOCAL, kinesisConfig, rabbitMqConfig, icebergConfig);
     }
@@ -112,11 +111,11 @@ public final class AppConfigLoader {
             LOG.info("Reading config from /etc/flink/application_properties.json");
             Map<String, String> kinesisProps = msfProps.get("KinesisSource");
             Map<String, String> icebergProps = msfProps.getOrDefault("IcebergSink", Collections.emptyMap());
-            streamArn     = getRequiredProperty(kinesisProps, "stream.arn");
-            awsRegion     = getRequiredProperty(kinesisProps, "aws.region");
+            streamArn = getRequiredProperty(kinesisProps, "stream.arn");
+            awsRegion = getRequiredProperty(kinesisProps, "aws.region");
             warehousePath = getRequiredProperty(icebergProps, "warehouse.path");
-            catalogName   = getRequiredProperty(icebergProps, "catalog.name");
-            tableName     = getRequiredProperty(icebergProps, "table.name");
+            catalogName = getRequiredProperty(icebergProps, "catalog.name");
+            tableName = getRequiredProperty(icebergProps, "table.name");
         } else {
             // Strategy 2: CLI args in property-group format (--KinesisSource.stream.arn=...)
             ParameterTool argParams = ParameterTool.fromArgs(args);
@@ -126,29 +125,29 @@ public final class AppConfigLoader {
                 LOG.info("Reading config from CLI args (property-group format)");
                 Map<String, String> kinesisProps = argGroups.get("KinesisSource");
                 Map<String, String> icebergProps = getPropertyGroup(argGroups, "IcebergSink");
-                streamArn     = getRequiredProperty(kinesisProps, "stream.arn");
-                awsRegion     = getRequiredProperty(kinesisProps, "aws.region");
+                streamArn = getRequiredProperty(kinesisProps, "stream.arn");
+                awsRegion = getRequiredProperty(kinesisProps, "aws.region");
                 warehousePath = getRequiredProperty(icebergProps, "warehouse.path");
-                catalogName   = getRequiredProperty(icebergProps, "catalog.name");
-                tableName     = getRequiredProperty(icebergProps, "table.name");
+                catalogName = getRequiredProperty(icebergProps, "catalog.name");
+                tableName = getRequiredProperty(icebergProps, "table.name");
             } else {
                 // Strategy 3: env vars / property files (local testing / CI)
                 LOG.info("No MSF runtime properties found; falling back to env vars / property files");
-                streamArn     = getRequiredEnvOrProperty(cloud, "KINESIS_STREAM_ARN", "kinesis.stream.arn");
-                awsRegion     = getRequiredEnvOrProperty(cloud, "AWS_REGION", "kinesis.aws.region");
+                streamArn = getRequiredEnvOrProperty(cloud, "KINESIS_STREAM_ARN", "kinesis.stream.arn");
+                awsRegion = getRequiredEnvOrProperty(cloud, "AWS_REGION", "kinesis.aws.region");
                 warehousePath = getRequiredEnvOrProperty(cloud, "ICEBERG_WAREHOUSE_PATH", "iceberg.warehouse.path");
-                catalogName   = getRequiredEnvOrProperty(cloud, "ICEBERG_CATALOG_NAME", "iceberg.catalog.name");
-                tableName     = getRequiredEnvOrProperty(cloud, "ICEBERG_TABLE_NAME", "iceberg.table.name");
+                catalogName = getRequiredEnvOrProperty(cloud, "ICEBERG_CATALOG_NAME", "iceberg.catalog.name");
+                tableName = getRequiredEnvOrProperty(cloud, "ICEBERG_TABLE_NAME", "iceberg.table.name");
             }
         }
 
         AppConfig.KinesisConfig kinesisConfig = new AppConfig.KinesisConfig(
                 streamArn,
                 awsRegion,
-            KinesisSourceConfigOptions.InitialPosition.valueOf(initialPosition.toUpperCase(Locale.ROOT)));
+                KinesisSourceConfigOptions.InitialPosition.valueOf(initialPosition.toUpperCase(Locale.ROOT)));
 
         AppConfig.RabbitMqConfig rabbitMqConfig = new AppConfig.RabbitMqConfig(
-            "", 5552, "", "", "/", "", "", 1000L);
+                "", 5552, "", "", "/", "", "", 1000L);
 
         IcebergSink.IcebergConfig icebergConfig = new IcebergSink.IcebergConfig(
                 warehousePath, catalogName, tableName);
@@ -209,7 +208,7 @@ public final class AppConfigLoader {
                 String groupId = fullKey.substring(0, dotIndex);
                 String propertyKey = fullKey.substring(dotIndex + 1);
                 groups.computeIfAbsent(groupId, k -> new HashMap<>())
-                      .put(propertyKey, value);
+                        .put(propertyKey, value);
             }
         }
         if (!groups.isEmpty()) {

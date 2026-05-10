@@ -28,8 +28,8 @@ public record S3FileContent(S3Notification notification, byte[] content, FileFor
         if (o == null || getClass() != o.getClass()) return false;
         S3FileContent that = (S3FileContent) o;
         return Objects.equals(notification, that.notification)
-            && Arrays.equals(content, that.content)
-            && format == that.format;
+                && Arrays.equals(content, that.content)
+                && format == that.format;
     }
 
     @Override

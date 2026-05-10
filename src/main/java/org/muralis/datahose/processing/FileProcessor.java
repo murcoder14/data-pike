@@ -41,11 +41,11 @@ public class FileProcessor extends RichFlatMapFunction<S3FileContent, ProcessedR
         this(defaultParsers(), new TemperatureSummaryCalculator());
     }
 
-            FileProcessor(
-                Map<FileFormat, StructuredFileParser> parsers,
+    FileProcessor(
+            Map<FileFormat, StructuredFileParser> parsers,
             TemperatureSummaryCalculator summaryCalculator) {
         this.parsers = parsers;
-            this.summaryCalculator = summaryCalculator;
+        this.summaryCalculator = summaryCalculator;
     }
 
     @Override
@@ -62,7 +62,7 @@ public class FileProcessor extends RichFlatMapFunction<S3FileContent, ProcessedR
         Instant processingTime = Instant.now();
 
         LOG.info("Processing file: {}/{} as {}",
-            notification.getBucketUrl(), notification.getObjectName(), fileFormat);
+                notification.getBucketUrl(), notification.getObjectName(), fileFormat);
 
         try {
             StructuredFileParser parser = requireParser(fileFormat);
@@ -76,16 +76,16 @@ public class FileProcessor extends RichFlatMapFunction<S3FileContent, ProcessedR
 
             out.collect(ProcessedRecord.builder()
                     .sourceNotification(notification)
-                .fileFormat(fileFormat)
-                .records(records)
+                    .fileFormat(fileFormat)
+                    .records(records)
                     .status(ProcessedRecord.STATUS_SUCCESS)
-                .recordsProcessed(records.size())
-                .recordsWritten(records.size())
+                    .recordsProcessed(records.size())
+                    .recordsWritten(records.size())
                     .processingTime(processingTime)
                     .build());
 
         } catch (Exception e) {
-                LOG.error("Error processing file {}/{}: {}",
+            LOG.error("Error processing file {}/{}: {}",
                     notification.getBucketUrl(), notification.getObjectName(),
                     e.getMessage(), e);
 

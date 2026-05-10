@@ -78,6 +78,8 @@ terraform apply -input=false -auto-approve -var-file=terraform.tfvars.dev \
   -target=aws_dynamodb_table.terraform_lock
 ```
 
+> **Expected warnings:** Terraform will print two `Warning: Resource targeting is in effect` / `Applied changes may be incomplete` notices. These are normal — `-target` is intentional here and this is exactly the exceptional situation Terraform describes. Disregard them. Confirm success by checking `Apply complete! Resources: 5 added` in the output.
+
 Step 1d — Re-enable the backend and migrate local state into S3:
 
 ```bash

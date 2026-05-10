@@ -20,6 +20,7 @@ if [[ "${PURGE}" == "--purge" ]]; then
     mkdir -p local-data
     docker run --rm -v "${ROOT_DIR}/local-data:/data" alpine:3.20 sh -c 'rm -rf /data/* /data/.[!.]* /data/..?*' || true
     rm -rf local-data
+    echo "local-data wiped via Docker-assisted cleanup."
   fi
   echo "Local stack stopped and local-data removed."
   exit 0

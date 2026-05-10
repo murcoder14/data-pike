@@ -28,7 +28,6 @@ import org.apache.iceberg.types.Types;
 import org.apache.iceberg.hadoop.HadoopCatalog;
 import org.jetbrains.annotations.NotNull;
 import org.muralis.datahose.model.ProcessedRecord;
-import org.muralis.datahose.model.TemperatureSummary;
 import org.muralis.datahose.processing.TemperatureSummaryAvroMapper;
 import org.apache.flink.api.connector.sink2.Sink;
 import org.apache.flink.api.connector.sink2.SinkWriter;
@@ -119,21 +118,15 @@ public class IcebergSink implements Sink<ProcessedRecord> {
                 throws IOException, InterruptedException {
 
             if (ProcessedRecord.STATUS_FAILURE.equals(record.getStatus())) {
-                LOG.debug("Skipping FAILURE record for {}/{}",
+                LOG.error("Skipping FAILURE record for {}/{}",
                         record.getSourceNotification().getBucketUrl(),
                         record.getSourceNotification().getObjectName());
-                return;
-            }
-
-            List<TemperatureSummary> rows = record.getRecords();
-            if (rows.isEmpty()) {
-                LOG.debug("Skipping record with no rows for {}/{}",
+            } else if (record.getRecords().isEmpty()) {
+                LOG.warn("Skipping record with no rows for {}/{}",
                         record.getSourceNotification().getBucketUrl(),
                         record.getSourceNotification().getObjectName());
-                return;
-            }
-
-            writeWithRetry(record);
+            } else
+                writeWithRetry(record);
         }
 
         @Override
@@ -186,7 +179,9 @@ public class IcebergSink implements Sink<ProcessedRecord> {
                     + " retries for " + sourceRef, lastException);
         }
 
-        /** Sleeps for the given duration; extracted for testability. */
+        /**
+         * Sleeps for the given duration; extracted for testability.
+         */
         void sleep(long millis) throws InterruptedException {
             Thread.sleep(millis);
         }
@@ -224,9 +219,9 @@ public class IcebergSink implements Sink<ProcessedRecord> {
     // -------------------------------------------------------------------------
 
     /**
-         * Immutable configuration for the Iceberg catalog connection.
-         */
-        public record IcebergConfig(
+     * Immutable configuration for the Iceberg catalog connection.
+     */
+    public record IcebergConfig(
             String warehousePath,
             String catalogName,
             String tableName,
@@ -236,70 +231,70 @@ public class IcebergSink implements Sink<ProcessedRecord> {
             String jdbcUser,
             String jdbcPassword) implements Serializable {
 
-            @Serial
-            private static final long serialVersionUID = 1L;
+        @Serial
+        private static final long serialVersionUID = 1L;
 
-            public IcebergConfig(String warehousePath, String catalogName, String tableName) {
-                this(warehousePath, catalogName, tableName,
+        public IcebergConfig(String warehousePath, String catalogName, String tableName) {
+            this(warehousePath, catalogName, tableName,
                     GlueCatalog.class.getName(), S3FileIO.class.getName(),
                     null, null, null);
-            }
+        }
 
-            public static IcebergConfig local(String warehousePath, String catalogName, String tableName) {
-                return new IcebergConfig(
-                        warehousePath,
-                        catalogName,
-                        tableName,
-                        HadoopCatalog.class.getName(),
-                        HadoopFileIO.class.getName(),
-                        null,
-                        null,
-                        null);
-                }
+        public static IcebergConfig local(String warehousePath, String catalogName, String tableName) {
+            return new IcebergConfig(
+                    warehousePath,
+                    catalogName,
+                    tableName,
+                    HadoopCatalog.class.getName(),
+                    HadoopFileIO.class.getName(),
+                    null,
+                    null,
+                    null);
+        }
 
-                public static IcebergConfig localJdbc(
-                    String warehousePath,
-                    String catalogName,
-                    String tableName,
-                    String jdbcUri,
-                    String jdbcUser,
-                    String jdbcPassword) {
-                return new IcebergConfig(
-                        warehousePath,
-                        catalogName,
-                        tableName,
+        public static IcebergConfig localJdbc(
+                String warehousePath,
+                String catalogName,
+                String tableName,
+                String jdbcUri,
+                String jdbcUser,
+                String jdbcPassword) {
+            return new IcebergConfig(
+                    warehousePath,
+                    catalogName,
+                    tableName,
                     JDBC_CATALOG_IMPL,
                     HadoopFileIO.class.getName(),
                     jdbcUri,
                     jdbcUser,
                     jdbcPassword);
-            }
+        }
 
-            public IcebergConfig {
-                Objects.requireNonNull(warehousePath, "warehousePath must not be null");
-                Objects.requireNonNull(catalogName, "catalogName must not be null");
-                Objects.requireNonNull(tableName, "tableName must not be null");
-                Objects.requireNonNull(catalogImpl, "catalogImpl must not be null");
-                Objects.requireNonNull(fileIoImpl, "fileIoImpl must not be null");
-                if (JDBC_CATALOG_IMPL.equals(catalogImpl)) {
-                    Objects.requireNonNull(jdbcUri, "jdbcUri must not be null for JdbcCatalog");
-                    Objects.requireNonNull(jdbcUser, "jdbcUser must not be null for JdbcCatalog");
-                    Objects.requireNonNull(jdbcPassword, "jdbcPassword must not be null for JdbcCatalog");
-                }
-            }
-
-            @Override
-            public @NotNull String toString() {
-                return "IcebergConfig{"
-                        + "warehousePath='" + warehousePath + '\''
-                        + ", catalogName='" + catalogName + '\''
-                        + ", tableName='" + tableName + '\''
-                    + ", catalogImpl='" + catalogImpl + '\''
-                    + ", fileIoImpl='" + fileIoImpl + '\''
-                        + ", jdbcUri='" + jdbcUri + '\''
-                        + '}';
+        public IcebergConfig {
+            Objects.requireNonNull(warehousePath, "warehousePath must not be null");
+            Objects.requireNonNull(catalogName, "catalogName must not be null");
+            Objects.requireNonNull(tableName, "tableName must not be null");
+            Objects.requireNonNull(catalogImpl, "catalogImpl must not be null");
+            Objects.requireNonNull(fileIoImpl, "fileIoImpl must not be null");
+            if (JDBC_CATALOG_IMPL.equals(catalogImpl)) {
+                Objects.requireNonNull(jdbcUri, "jdbcUri must not be null for JdbcCatalog");
+                Objects.requireNonNull(jdbcUser, "jdbcUser must not be null for JdbcCatalog");
+                Objects.requireNonNull(jdbcPassword, "jdbcPassword must not be null for JdbcCatalog");
             }
         }
+
+        @Override
+        public @NotNull String toString() {
+            return "IcebergConfig{"
+                    + "warehousePath='" + warehousePath + '\''
+                    + ", catalogName='" + catalogName + '\''
+                    + ", tableName='" + tableName + '\''
+                    + ", catalogImpl='" + catalogImpl + '\''
+                    + ", fileIoImpl='" + fileIoImpl + '\''
+                    + ", jdbcUri='" + jdbcUri + '\''
+                    + '}';
+        }
+    }
 
     // -------------------------------------------------------------------------
     // Default writer implementation
@@ -308,8 +303,8 @@ public class IcebergSink implements Sink<ProcessedRecord> {
     /**
      * Default Iceberg table writer that interacts with an Apache Iceberg catalog.
      *
-    * <p>This implementation loads a Glue-backed Iceberg catalog using the configured
-    * warehouse path and writes Avro data files through Iceberg's S3 file IO.
+     * <p>This implementation loads a Glue-backed Iceberg catalog using the configured
+     * warehouse path and writes Avro data files through Iceberg's S3 file IO.
      */
     static class DefaultIcebergTableWriter implements IcebergTableWriter {
 

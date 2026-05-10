@@ -51,6 +51,12 @@ mvn clean package
 mvn test
 ```
 
+Some tests deliberately exercise the retry-failure path and emit `ERROR`-level log lines (e.g. `Failed to write to Iceberg table … after 3 retries`). This is expected — the test passes by asserting the exception is thrown. Confirm the build succeeded by checking the summary line at the bottom of the Maven output:
+
+```
+Tests run: 49, Failures: 0, Errors: 0, Skipped: 1
+```
+
 ## Cloud Runtime Properties
 
 On Managed Service for Apache Flink, the application reads its configuration from `/etc/flink/application_properties.json`, which MSF writes before the Job Manager starts. Configure the following property groups in the MSF application's `EnvironmentProperties`:
@@ -94,14 +100,30 @@ Start the local stack and submit the Flink job:
 ./scripts/local-up.sh
 ```
 
-Publish test files to RabbitMQ:
+`local-up.sh` builds the JAR, starts all Docker services (RabbitMQ, PostgreSQL, Flink, Trino), submits the Flink job, then exits. The services keep running in the background — open a second terminal to publish messages while the stack is live.
+
+Publish test files to RabbitMQ (in a second terminal):
 
 ```bash
-./scripts/local-publish-json.sh
-./scripts/local-publish-xml.sh
-./scripts/local-publish-csv.sh
-./scripts/local-publish-tsv.sh
+./scripts/local-publish-json.sh          # JSON array
+./scripts/local-publish-xml.sh           # XML
+./scripts/local-publish-csv.sh           # CSV
+./scripts/local-publish-tsv.sh           # TSV
+./scripts/local-publish-file.sh path/to/my-file.json   # any local file
 ```
+
+Send a custom inline message directly via the RabbitMQ Management API:
+
+```bash
+printf '[{"date":"2024-07-01","city":"London","temperature":18}]' \
+  | python3 -c 'import json,sys; print(json.dumps({"properties":{},"routing_key":"weather-stream","payload":sys.stdin.read(),"payload_encoding":"string"}))' \
+  | curl -sS -u datapike:datapike \
+      -H "content-type:application/json" \
+      -X POST "http://localhost:15672/api/exchanges/%2F/amq.default/publish" \
+      -d @-
+```
+
+The payload is a JSON array of `{date, city, temperature}` objects. Use a JSON array for multiple observations or a single-element array for one record. The pipeline auto-detects JSON, XML, CSV, and TSV formats.
 
 Run the full smoke test (publishes files and verifies Iceberg output):
 

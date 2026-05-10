@@ -64,7 +64,7 @@ final class DelimitedStructuredFileParser implements StructuredFileParser {
                 .map(Map.Entry::getValue)
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Missing required column: " + key));
-        if (value == null || value.isBlank()) {
+        if (value.isBlank()) {
             throw new IllegalArgumentException("Blank required column: " + key);
         }
         return value;

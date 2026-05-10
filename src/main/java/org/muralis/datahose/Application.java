@@ -23,7 +23,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 
-
 /**
  * Entry point for the Flink streaming data pipeline.
  *
@@ -90,38 +89,38 @@ public class Application {
         env.execute("Flink Data Pipeline");
     }
 
-        static DataStream<String> buildInputSource(StreamExecutionEnvironment env, AppConfig config) {
-                if (config.mode() == ExecutionMode.LOCAL) {
-                        return env.addSource(new RabbitMqStreamsSourceFunction(config.rabbitMq()))
-                                        .setParallelism(1)
-                                        .name("RabbitMqStreamsSource");
-                }
+    static DataStream<String> buildInputSource(StreamExecutionEnvironment env, AppConfig config) {
+        if (config.mode() == ExecutionMode.LOCAL) {
+            return env.addSource(new RabbitMqStreamsSourceFunction(config.rabbitMq()))
+                    .setParallelism(1)
+                    .name("RabbitMqStreamsSource");
+        }
 
-                KinesisStreamsSource<String> kinesisSource = KinesisMessageSource.create(
-                                config.kinesis().streamArn(),
-                                config.kinesis().awsRegion(),
-                                config.kinesis().initialPosition());
+        KinesisStreamsSource<String> kinesisSource = KinesisMessageSource.create(
+                config.kinesis().streamArn(),
+                config.kinesis().awsRegion(),
+                config.kinesis().initialPosition());
 
-                return env.fromSource(
-                                kinesisSource,
-                                WatermarkStrategy.noWatermarks(),
-                                "KinesisSource",
-                                TypeInformation.of(String.class));
+        return env.fromSource(
+                kinesisSource,
+                WatermarkStrategy.noWatermarks(),
+                "KinesisSource",
+                TypeInformation.of(String.class));
     }
 
-        static DataStream<S3FileContent> buildFileContents(DataStream<String> rawMessages, AppConfig config) {
-                if (config.mode() == ExecutionMode.LOCAL) {
-                        return rawMessages
-                                        .flatMap(new RabbitMessageFileContentAdapter(config.rabbitMq().streamName()))
-                                        .name("RabbitMessageFileContentAdapter");
-                }
-
-                DataStream<S3Notification> notifications = rawMessages
-                                .flatMap(new MessageParser())
-                                .name("MessageParser");
-
-                return notifications
-                                .flatMap(new S3FileReader())
-                                .name("S3FileReader");
+    static DataStream<S3FileContent> buildFileContents(DataStream<String> rawMessages, AppConfig config) {
+        if (config.mode() == ExecutionMode.LOCAL) {
+            return rawMessages
+                    .flatMap(new RabbitMessageFileContentAdapter(config.rabbitMq().streamName()))
+                    .name("RabbitMessageFileContentAdapter");
         }
+
+        DataStream<S3Notification> notifications = rawMessages
+                .flatMap(new MessageParser())
+                .name("MessageParser");
+
+        return notifications
+                .flatMap(new S3FileReader())
+                .name("S3FileReader");
+    }
 }

@@ -66,16 +66,48 @@ public class ProcessedRecord implements Serializable {
         private String errorMessage;
         private Instant processingTime;
 
-        private Builder() {}
+        private Builder() {
+        }
 
-        public Builder sourceNotification(S3Notification sourceNotification) { this.sourceNotification = sourceNotification; return this; }
-    public Builder fileFormat(FileFormat fileFormat) { this.fileFormat = fileFormat; return this; }
-        public Builder records(List<TemperatureSummary> records) { this.records = records; return this; }
-        public Builder status(String status) { this.status = status; return this; }
-        public Builder recordsProcessed(long recordsProcessed) { this.recordsProcessed = recordsProcessed; return this; }
-        public Builder recordsWritten(long recordsWritten) { this.recordsWritten = recordsWritten; return this; }
-        public Builder errorMessage(String errorMessage) { this.errorMessage = errorMessage; return this; }
-        public Builder processingTime(Instant processingTime) { this.processingTime = processingTime; return this; }
+        public Builder sourceNotification(S3Notification sourceNotification) {
+            this.sourceNotification = sourceNotification;
+            return this;
+        }
+
+        public Builder fileFormat(FileFormat fileFormat) {
+            this.fileFormat = fileFormat;
+            return this;
+        }
+
+        public Builder records(List<TemperatureSummary> records) {
+            this.records = records;
+            return this;
+        }
+
+        public Builder status(String status) {
+            this.status = status;
+            return this;
+        }
+
+        public Builder recordsProcessed(long recordsProcessed) {
+            this.recordsProcessed = recordsProcessed;
+            return this;
+        }
+
+        public Builder recordsWritten(long recordsWritten) {
+            this.recordsWritten = recordsWritten;
+            return this;
+        }
+
+        public Builder errorMessage(String errorMessage) {
+            this.errorMessage = errorMessage;
+            return this;
+        }
+
+        public Builder processingTime(Instant processingTime) {
+            this.processingTime = processingTime;
+            return this;
+        }
 
         public ProcessedRecord build() {
             Objects.requireNonNull(sourceNotification, "sourceNotification must not be null");
