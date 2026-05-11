@@ -18,12 +18,6 @@ variable "iceberg_database_name" {
   nullable    = false
 }
 
-variable "iceberg_table_name" {
-  description = "Name of the Iceberg table (without database prefix)"
-  type        = string
-  nullable    = false
-}
-
 variable "input_bucket_name" {
   description = "Name of the S3 Input Bucket"
   type        = string

@@ -37,6 +37,7 @@ echo "[preflight] Checking local dependencies..."
 check_command java
 check_command mvn
 check_command docker
+check_command aws
 check_command curl
 check_command python3
 
@@ -49,15 +50,14 @@ if [[ "${SKIP_PORT_CHECK}" != "true" ]]; then
   echo "[preflight] Checking required local ports..."
   check_port_free 8081
   check_port_free 8080
-  check_port_free 15672
-  check_port_free 5552
+  check_port_free 4566
   check_port_free 5433
 else
   echo "[preflight] SKIP_PORT_CHECK=true; skipping port checks."
 fi
 
-if [[ ! -f "${ROOT_DIR}/docker-compose.local.yml" ]]; then
-  fail "Missing docker-compose.local.yml in ${ROOT_DIR}."
+if [[ ! -f "${ROOT_DIR}/docker-compose.localaws.yml" ]]; then
+  fail "Missing docker-compose.localaws.yml in ${ROOT_DIR}."
 fi
 
 echo "[preflight] OK: local environment is ready."

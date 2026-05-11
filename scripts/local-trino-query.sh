@@ -2,10 +2,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPOSE_FILE="${ROOT_DIR}/docker-compose.local.yml"
+COMPOSE_FILE="${ROOT_DIR}/docker-compose.localaws.yml"
 COMPOSE_ENV_FILE="${ROOT_DIR}/.env.local"
 COMPOSE_ARGS=( -f "${COMPOSE_FILE}" )
-SQL="${1:-SELECT * FROM iceberg.default.temperature_summary ORDER BY date LIMIT 20}"
+SQL="${1:-SELECT * FROM iceberg.weather_db.temperature_summary ORDER BY yyyy_mm_dd LIMIT 20}"
 TRINO_USER="${TRINO_USER:-datapike}"
 TRINO_CATALOG="${TRINO_CATALOG:-iceberg}"
 TRINO_SCHEMA="${TRINO_SCHEMA:-default}"
@@ -38,7 +38,7 @@ ensure_trino_running() {
   fi
 
   if ! grep -qx "trino" <<<"${services}"; then
-    echo "Trino service is not defined in docker-compose.local.yml"
+    echo "Trino service is not defined in docker-compose.localaws.yml"
     exit 1
   fi
 

@@ -6,7 +6,7 @@ import java.util.Locale;
  * Supported runtime execution modes.
  */
 public enum ExecutionMode {
-    LOCAL,
+    LOCAL_AWS,
     CLOUD;
 
     /**
@@ -20,10 +20,10 @@ public enum ExecutionMode {
 
         String normalized = value.trim().toLowerCase(Locale.ROOT);
         return switch (normalized) {
-            case "local", "--local", "mode=local", "--mode=local" -> LOCAL;
+            case "local_aws", "--local-aws", "mode=local_aws", "--mode=local_aws" -> LOCAL_AWS;
             case "cloud", "mode=cloud", "--mode=cloud" -> CLOUD;
             default -> throw new IllegalArgumentException(
-                    "Unsupported execution mode '" + value + "'. Expected local or cloud.");
+                    "Unsupported execution mode '" + value + "'. Expected local_aws or cloud.");
         };
     }
 }

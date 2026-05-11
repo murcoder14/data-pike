@@ -11,23 +11,19 @@ import java.io.Serializable;
 public record AppConfig(
         ExecutionMode mode,
         KinesisConfig kinesis,
-        RabbitMqConfig rabbitMq,
         IcebergSink.IcebergConfig iceberg) implements Serializable {
 
     public record KinesisConfig(
             String streamArn,
             String awsRegion,
-            KinesisSourceConfigOptions.InitialPosition initialPosition) implements Serializable {
+            KinesisSourceConfigOptions.InitialPosition initialPosition,
+            String endpointUrl) implements Serializable {
+
+        /** Convenience constructor for production/cloud use (no endpoint override). */
+        public KinesisConfig(String streamArn, String awsRegion,
+                             KinesisSourceConfigOptions.InitialPosition initialPosition) {
+            this(streamArn, awsRegion, initialPosition, null);
+        }
     }
 
-    public record RabbitMqConfig(
-            String host,
-            int port,
-            String username,
-            String password,
-            String virtualHost,
-            String streamName,
-            String consumerName,
-            long pollTimeoutMs) implements Serializable {
-    }
 }

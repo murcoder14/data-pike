@@ -5,10 +5,8 @@ import org.muralis.datahose.model.S3FileContent;
 import org.muralis.datahose.model.S3Notification;
 import org.muralis.datahose.configuration.AppConfig;
 import org.muralis.datahose.configuration.AppConfigLoader;
-import org.muralis.datahose.configuration.ExecutionMode;
 import org.muralis.datahose.processing.FileProcessor;
 import org.muralis.datahose.processing.MessageParser;
-import org.muralis.datahose.processing.RabbitMessageFileContentAdapter;
 import org.muralis.datahose.processing.S3FileReader;
 import org.muralis.datahose.sink.IcebergSink;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
@@ -18,7 +16,6 @@ import org.apache.flink.core.execution.CheckpointingMode;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.muralis.datahose.source.KinesisMessageSource;
-import org.muralis.datahose.source.RabbitMqStreamsSourceFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,7 +26,7 @@ import org.slf4j.LoggerFactory;
  * <p>Reads mode-aware configuration (local or cloud), configures checkpointing,
  * and wires the pipeline:
  * <ol>
- *   <li>KinesisMessageSource or RabbitMQ Streams source → DataStream&lt;String&gt;</li>
+ *   <li>KinesisMessageSource → DataStream&lt;String&gt;</li>
  *   <li>MessageParser → DataStream&lt;S3Notification&gt;</li>
  *   <li>S3FileReader → DataStream&lt;S3FileContent&gt;</li>
  *   <li>FileProcessor → DataStream&lt;ProcessedRecord&gt;</li>
@@ -69,7 +66,7 @@ public class Application {
 
         // --- Wire the pipeline ---
 
-        // 1. Kinesis or RabbitMQ source → DataStream<String>
+        // 1. Kinesis source → DataStream<String>
         DataStream<String> rawMessages = buildInputSource(env, config);
 
         // 2/3. Build file contents stream via mode-specific path.
@@ -90,16 +87,9 @@ public class Application {
     }
 
     static DataStream<String> buildInputSource(StreamExecutionEnvironment env, AppConfig config) {
-        if (config.mode() == ExecutionMode.LOCAL) {
-            return env.addSource(new RabbitMqStreamsSourceFunction(config.rabbitMq()))
-                    .setParallelism(1)
-                    .name("RabbitMqStreamsSource");
-        }
-
-        KinesisStreamsSource<String> kinesisSource = KinesisMessageSource.create(
-                config.kinesis().streamArn(),
-                config.kinesis().awsRegion(),
-                config.kinesis().initialPosition());
+        // LOCAL_AWS and CLOUD both use the Kinesis connector.
+        // In LOCAL_AWS mode, KinesisConfig.endpointUrl() is set to the MiniStack endpoint.
+        KinesisStreamsSource<String> kinesisSource = KinesisMessageSource.create(config.kinesis());
 
         return env.fromSource(
                 kinesisSource,
@@ -109,12 +99,8 @@ public class Application {
     }
 
     static DataStream<S3FileContent> buildFileContents(DataStream<String> rawMessages, AppConfig config) {
-        if (config.mode() == ExecutionMode.LOCAL) {
-            return rawMessages
-                    .flatMap(new RabbitMessageFileContentAdapter(config.rabbitMq().streamName()))
-                    .name("RabbitMessageFileContentAdapter");
-        }
-
+        // LOCAL_AWS and CLOUD: full S3 path. In LOCAL_AWS mode, S3Client.create() picks up
+        // AWS_ENDPOINT_URL from the container environment to point at MiniStack.
         DataStream<S3Notification> notifications = rawMessages
                 .flatMap(new MessageParser())
                 .name("MessageParser");

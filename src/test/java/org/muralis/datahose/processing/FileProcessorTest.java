@@ -173,16 +173,16 @@ class FileProcessorTest {
 
     private void assertSummary(
             TemperatureSummary record,
-            String date,
-            int maxTemp,
+            String yyyyMmDd,
+            double maxTemp,
             String maxTempCity,
-            int minTemp,
+            double minTemp,
             String minTempCity) {
-        assertEquals(date, record.getDate());
-        assertEquals(maxTemp, record.getMaxTemp());
-        assertEquals(maxTempCity, record.getMaxTempCity());
-        assertEquals(minTemp, record.getMinTemp());
-        assertEquals(minTempCity, record.getMinTempCity());
+        assertEquals(yyyyMmDd, record.getYyyyMmDd());
+        assertEquals(maxTemp, record.getCityTemps().get(maxTempCity), 0.001,
+                "Max temp for city '" + maxTempCity + "'");
+        assertEquals(minTemp, record.getCityTemps().get(minTempCity), 0.001,
+                "Min temp for city '" + minTempCity + "'");
     }
 
     /** Simple collector that accumulates results into a list. */

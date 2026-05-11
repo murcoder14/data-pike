@@ -1,0 +1,29 @@
+# Flink Data Pipeline - Production Variable Values
+
+# --- Project ---
+project_name = "benefits-data-pipeline"
+environment  = "prod"
+aws_region   = "us-east-1"
+
+# --- Networking ---
+vpc_cidr                   = "10.0.0.0/16"
+log_retention_days         = 30
+enable_cloudwatch_logs_kms = true
+enable_vpc_flow_logs       = true
+
+# --- Kinesis ---
+kinesis_shard_count = 3
+# kinesis_stream_name = ""  # Defaults to ${project_name}-${environment}
+
+# --- S3 Buckets (defaults to ${project_name}-${environment}-<suffix>) ---
+# input_bucket_name   = ""
+# iceberg_bucket_name = ""
+# jar_bucket_name     = ""
+
+# --- Iceberg / Glue ---
+iceberg_database_name = "benefits_data_hub"
+iceberg_table_name    = "temperature"
+iceberg_catalog_name  = "glue_catalog"
+
+# --- Flink Application ---
+file_key = "jars/data-pike-1.0-SNAPSHOT.jar"

@@ -24,12 +24,12 @@ final class TemperatureSummaryCalculator {
         List<TemperatureSummary> summaries = new ArrayList<>();
         for (Map.Entry<String, DailyAccumulator> entry : entries) {
             DailyAccumulator accumulator = entry.getValue();
-            summaries.add(new TemperatureSummary(
-                    entry.getKey(),
-                    accumulator.maxTemp,
-                    accumulator.maxTempCity,
-                    accumulator.minTemp,
-                    accumulator.minTempCity));
+            Map<String, Double> cityTemps = new LinkedHashMap<>();
+            cityTemps.put(accumulator.maxTempCity, (double) accumulator.maxTemp);
+            if (!accumulator.maxTempCity.equals(accumulator.minTempCity)) {
+                cityTemps.put(accumulator.minTempCity, (double) accumulator.minTemp);
+            }
+            summaries.add(new TemperatureSummary(entry.getKey(), cityTemps));
         }
         return summaries;
     }

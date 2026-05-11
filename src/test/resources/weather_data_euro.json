@@ -1,0 +1,37 @@
+[
+  {
+    "date": "2022-02-15",
+    "city": "Paris",
+    "temperature": 41
+  },
+  {
+    "date": "2022-02-15",
+    "city": "Berlin",
+    "temperature": 37
+  },
+  {
+    "date": "2022-02-15",
+    "city": "Madrid",
+    "temperature": 53
+  },
+  {
+    "date": "2022-10-20",
+    "city": "Rome",
+    "temperature": 69
+  },
+  {
+    "date": "2022-10-20",
+    "city": "Vienna",
+    "temperature": 64
+  },
+  {
+    "date": "2022-10-20",
+    "city": "Athens",
+    "temperature": 74
+  },
+  {
+    "date": "2022-10-20",
+    "city": "Manchester",
+    "temperature": 49
+  }
+]

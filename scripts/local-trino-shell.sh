@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPOSE_FILE="${ROOT_DIR}/docker-compose.local.yml"
+COMPOSE_FILE="${ROOT_DIR}/docker-compose.localaws.yml"
 COMPOSE_ENV_FILE="${ROOT_DIR}/.env.local"
 COMPOSE_ARGS=( -f "${COMPOSE_FILE}" )
 

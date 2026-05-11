@@ -37,8 +37,8 @@ output "glue_database_name" {
 }
 
 output "glue_table_name" {
-  description = "Name of the Glue Catalog Iceberg table"
-  value       = module.storage.glue_table_name
+  description = "Configured Glue Catalog Iceberg table name (table is not created by Terraform)"
+  value       = var.iceberg_table_name
 }
 
 output "iceberg_warehouse_path" {

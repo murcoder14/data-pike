@@ -7,6 +7,8 @@ terraform/tfplan.*
 terraform/terraform.tfvars
 terraform/terraform.tfvars.*
 !terraform/terraform.tfvars.example
+!terraform/terraform.tfvars.dev
+!terraform/terraform.tfvars.prod
 terraform/modules/storage/lambda/
 
 # Java / Maven

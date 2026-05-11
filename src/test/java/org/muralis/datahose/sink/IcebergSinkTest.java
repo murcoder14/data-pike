@@ -15,7 +15,9 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -239,7 +241,7 @@ class IcebergSinkTest {
         }
 
         assertEquals(1, callCount.get(), "Missing table should not be retried");
-        assertTrue(ex.getMessage().contains("Provision it via Terraform"));
+        assertTrue(ex.getMessage().contains("Create the table in the Glue catalog database"));
         assertTrue(ex.getCause() instanceof NoSuchTableException);
     }
 
@@ -257,7 +259,7 @@ class IcebergSinkTest {
 
     @Test
     void localConfig_usesFilesystemCatalog() {
-        IcebergConfig localConfig = IcebergConfig.local("file:///tmp/warehouse", "local_catalog", "default.temperature_summary");
+        IcebergConfig localConfig = IcebergConfig.local("file:///tmp/warehouse", "local_catalog", "weather_db.temperature_summary");
 
         assertEquals(HadoopCatalog.class.getName(), localConfig.catalogImpl());
         assertNull(localConfig.jdbcUri());
@@ -270,7 +272,7 @@ class IcebergSinkTest {
         IcebergConfig localConfig = IcebergConfig.localJdbc(
                 "file:///tmp/warehouse",
                 "local_catalog",
-                "default.temperature_summary",
+                "weather_db.temperature_summary",
                 "jdbc:postgresql://localhost:5433/iceberg_catalog",
                 "iceberg_user",
                 "iceberg_password");
@@ -304,12 +306,10 @@ class IcebergSinkTest {
     }
 
     private TemperatureSummary temperatureSummary(long recordIndex) {
-        return new TemperatureSummary(
-                "2024-07-0" + (recordIndex + 1),
-                100 + (int) recordIndex,
-                "MaxCity" + recordIndex,
-                70 + (int) recordIndex,
-                "MinCity" + recordIndex);
+        Map<String, Double> cityTemps = new LinkedHashMap<>();
+        cityTemps.put("MaxCity" + recordIndex, (double) (100 + (int) recordIndex));
+        cityTemps.put("MinCity" + recordIndex, (double) (70 + (int) recordIndex));
+        return new TemperatureSummary("2024-07-0" + (recordIndex + 1), cityTemps);
     }
 
     /** Recording writer that captures all write calls. */

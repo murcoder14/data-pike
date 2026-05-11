@@ -26,7 +26,6 @@ module "storage" {
   project_name          = var.project_name
   environment           = var.environment
   iceberg_database_name = var.iceberg_database_name
-  iceberg_table_name    = var.iceberg_table_name
   input_bucket_name     = var.input_bucket_name != "" ? var.input_bucket_name : "${var.project_name}-${var.environment}-input"
   iceberg_bucket_name   = var.iceberg_bucket_name != "" ? var.iceberg_bucket_name : "${var.project_name}-${var.environment}-iceberg"
   jar_bucket_name       = var.jar_bucket_name != "" ? var.jar_bucket_name : "${var.project_name}-${var.environment}-jar"
@@ -66,7 +65,7 @@ module "kinesis" {
 # =============================================================================
 
 module "flink" {
-  source                  = "./modules/flink"
+  source = "./modules/flink"
   providers = {
     aws = aws.no_tags
   }

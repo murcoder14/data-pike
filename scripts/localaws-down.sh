@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPOSE_FILE="${ROOT_DIR}/docker-compose.local.yml"
+COMPOSE_FILE="${ROOT_DIR}/docker-compose.localaws.yml"
 COMPOSE_ENV_FILE="${ROOT_DIR}/.env.local"
 COMPOSE_ARGS=( -f "${COMPOSE_FILE}" )
 PURGE="${1:-}"
@@ -22,11 +22,11 @@ if [[ "${PURGE}" == "--purge" ]]; then
     rm -rf local-data
     echo "local-data wiped via Docker-assisted cleanup."
   fi
-  echo "Local stack stopped and local-data removed."
+  echo "Local-AWS stack stopped and local-data removed."
   exit 0
 fi
 
 docker compose "${COMPOSE_ARGS[@]}" down --remove-orphans
 
-echo "Local stack stopped."
-echo "Use './scripts/local-down.sh --purge' to also remove local-data."
+echo "Local-AWS stack stopped."
+echo "Use './scripts/localaws-down.sh --purge' to also remove local-data."

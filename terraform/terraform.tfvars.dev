@@ -1,0 +1,30 @@
+# Flink Data Pipeline 
+
+# --- Project ---
+project_name        = "weather-data-pipeline"
+environment         = "dev"
+aws_region          = "us-east-1"
+
+# --- Networking ---
+vpc_cidr            = "10.0.0.0/16"
+log_retention_days  = 1
+enable_cloudwatch_logs_kms = false
+enable_vpc_flow_logs = false
+
+# --- Kinesis ---
+kinesis_shard_count = 1
+kinesis_stream_name = "weather-data-stream-dev"  # Defaults to ${project_name}-${environment}
+
+# --- S3 Buckets (defaults to ${project_name}-${environment}-<suffix>) ---
+input_bucket_name   = "weather-data-input-dev"
+iceberg_bucket_name = "weather-data-output-dev"
+jar_bucket_name     = "weather-data-jar-dev"
+
+# --- Iceberg / Glue ---
+iceberg_catalog_name   = "weather_catalog"
+iceberg_database_name  = "weather_db"
+iceberg_table_name     = "temperature"
+
+# --- Flink Application ---
+file_key            = "jars/data-pike-1.0-SNAPSHOT.jar"
+

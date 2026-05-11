@@ -18,7 +18,7 @@ class AppConfigLoaderTest {
                 "--KinesisSource.aws.region=us-east-1",
                 "--IcebergSink.warehouse.path=s3://warehouse/path",
                 "--IcebergSink.catalog.name=glue_catalog",
-                "--IcebergSink.table.name=default.temperature_summary"
+                "--IcebergSink.table.name=weather_db.temperature_summary"
         });
 
         Map<String, Map<String, String>> groups = AppConfigLoader.extractPropertyGroups(params);
@@ -29,7 +29,7 @@ class AppConfigLoaderTest {
         assertEquals("us-east-1", groups.get("KinesisSource").get("aws.region"));
         assertEquals("s3://warehouse/path", groups.get("IcebergSink").get("warehouse.path"));
         assertEquals("glue_catalog", groups.get("IcebergSink").get("catalog.name"));
-        assertEquals("default.temperature_summary", groups.get("IcebergSink").get("table.name"));
+        assertEquals("weather_db.temperature_summary", groups.get("IcebergSink").get("table.name"));
     }
 
     @Test
@@ -42,7 +42,7 @@ class AppConfigLoaderTest {
                 "--KinesisSource.aws.region=us-east-1",
                 "--IcebergSink.warehouse.path=s3://warehouse/path",
                 "--IcebergSink.catalog.name=glue_catalog",
-                "--IcebergSink.table.name=default.temperature_summary"
+                "--IcebergSink.table.name=weather_db.temperature_summary"
         }, defaults);
 
         assertEquals(ExecutionMode.CLOUD, config.mode());
@@ -51,7 +51,7 @@ class AppConfigLoaderTest {
         assertEquals(KinesisSourceConfigOptions.InitialPosition.LATEST, config.kinesis().initialPosition());
         assertEquals("s3://warehouse/path", config.iceberg().warehousePath());
         assertEquals("glue_catalog", config.iceberg().catalogName());
-        assertEquals("default.temperature_summary", config.iceberg().tableName());
+        assertEquals("weather_db.temperature_summary", config.iceberg().tableName());
     }
 
     @Test

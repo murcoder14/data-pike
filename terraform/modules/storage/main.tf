@@ -282,7 +282,7 @@ resource "aws_s3_bucket_policy" "jar_tls_only" {
 }
 
 # =============================================================================
-# Glue Catalog Database and Iceberg Table
+# Glue Catalog Database
 # =============================================================================
 
 resource "aws_glue_catalog_database" "iceberg" {
@@ -297,50 +297,3 @@ resource "aws_glue_catalog_database" "iceberg" {
   }
 }
 
-resource "aws_glue_catalog_table" "iceberg" {
-  database_name = aws_glue_catalog_database.iceberg.name
-  name          = var.iceberg_table_name
-  description   = "Iceberg temperature summary table (min/max city temperatures by date)"
-
-  table_type = "EXTERNAL_TABLE"
-
-  parameters = {
-    "format-version" = "2"
-  }
-
-  open_table_format_input {
-    iceberg_input {
-      metadata_operation = "CREATE"
-      version            = "2"
-    }
-  }
-
-  storage_descriptor {
-    location = "s3://${aws_s3_bucket.iceberg.id}/warehouse/${var.iceberg_database_name}/${var.iceberg_table_name}"
-
-    columns {
-      name = "date"
-      type = "string"
-    }
-
-    columns {
-      name = "max_temp"
-      type = "int"
-    }
-
-    columns {
-      name = "max_temp_city"
-      type = "string"
-    }
-
-    columns {
-      name = "min_temp"
-      type = "int"
-    }
-
-    columns {
-      name = "min_temp_city"
-      type = "string"
-    }
-  }
-}

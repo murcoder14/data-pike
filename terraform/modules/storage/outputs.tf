@@ -52,11 +52,6 @@ output "glue_database_name" {
   value       = aws_glue_catalog_database.iceberg.name
 }
 
-output "glue_table_name" {
-  description = "Name of the Glue Catalog Iceberg table"
-  value       = aws_glue_catalog_table.iceberg.name
-}
-
 output "iceberg_warehouse_path" {
   description = "S3 path for the Iceberg warehouse"
   value       = "s3://${aws_s3_bucket.iceberg.id}/warehouse"

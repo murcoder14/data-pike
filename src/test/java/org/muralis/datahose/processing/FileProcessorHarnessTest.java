@@ -42,11 +42,9 @@ class FileProcessorHarnessTest {
             assertEquals(4, record.getRecordsProcessed());
 
             TemperatureSummary julySecond = record.getRecords().get(1);
-            assertEquals("2024-07-02", julySecond.getDate());
-            assertEquals(109, julySecond.getMaxTemp());
-            assertEquals("Phoenix", julySecond.getMaxTempCity());
-            assertEquals(75, julySecond.getMinTemp());
-            assertEquals("San Diego", julySecond.getMinTempCity());
+            assertEquals("2024-07-02", julySecond.getYyyyMmDd());
+            assertEquals(109.0, julySecond.getCityTemps().get("Phoenix"), 0.001);
+            assertEquals(75.0, julySecond.getCityTemps().get("San Diego"), 0.001);
             assertTrue(record.getProcessingTime() != null);
         }
     }

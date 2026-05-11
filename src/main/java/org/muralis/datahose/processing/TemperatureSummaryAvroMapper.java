@@ -13,11 +13,8 @@ public final class TemperatureSummaryAvroMapper {
         List<GenericRecord> records = new ArrayList<>();
         for (TemperatureSummary summary : summaries) {
             GenericData.Record record = new GenericData.Record(TemperatureSummarySchemas.TEMPERATURE_SUMMARY);
-            record.put("date", summary.getDate());
-            record.put("max_temp", summary.getMaxTemp());
-            record.put("max_temp_city", summary.getMaxTempCity());
-            record.put("min_temp", summary.getMinTemp());
-            record.put("min_temp_city", summary.getMinTempCity());
+            record.put("yyyy_mm_dd", summary.getYyyyMmDd());
+            record.put("city_temps", summary.getCityTemps());
             records.add(record);
         }
         return records;

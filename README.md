@@ -84,83 +84,167 @@ ICEBERG_CATALOG_NAME
 ICEBERG_TABLE_NAME
 ```
 
-## Local Mode (RabbitMQ Streams + Local Iceberg)
+## Local Mode
 
-Local mode replaces Kinesis with RabbitMQ Streams as the source and uses an Iceberg JDBC catalog backed by PostgreSQL. Docker Compose starts all required services. Trino connects to the same catalog for ad-hoc queries.
+Local development uses [MiniStack](https://ministack.dev) — an AWS-compatible emulator. The pipeline runs the **exact same Kinesis + S3 code path** as production.
 
-Run preflight checks (tools, Docker daemon, ports):
+### Prerequisites
 
-```bash
-./scripts/local-preflight.sh
-```
+- Docker (same as `LOCAL` mode)
+- AWS CLI v2 (`aws`) configured with any region; credentials are not validated against real AWS
 
-Start the local stack and submit the Flink job:
-
-```bash
-./scripts/local-up.sh
-```
-
-`local-up.sh` builds the JAR, starts all Docker services (RabbitMQ, PostgreSQL, Flink, Trino), submits the Flink job, then exits. The services keep running in the background — open a second terminal to publish messages while the stack is live.
-
-Publish test files to RabbitMQ (in a second terminal):
+### Start the stack
 
 ```bash
-./scripts/local-publish-json.sh          # JSON array
-./scripts/local-publish-xml.sh           # XML
-./scripts/local-publish-csv.sh           # CSV
-./scripts/local-publish-tsv.sh           # TSV
-./scripts/local-publish-file.sh path/to/my-file.json   # any local file
+./scripts/localaws-up.sh
 ```
 
-Send a custom inline message directly via the RabbitMQ Management API:
+This will:
+1. Build the JAR
+2. Start MiniStack, Postgres, Flink job-/task-manager, and Trino via `docker-compose.localaws.yml`
+3. Wait for MiniStack's health endpoint
+4. Run `ministack-init.sh` to create the Kinesis stream (`weather-stream`) and S3 input bucket (`data-pike-input`)
+5. Wait for Trino to be query-ready
+6. Create the Iceberg table (`weather_db.temperature_summary`) if it does not already exist
+7. Submit the Flink job (mode = `LOCAL_AWS`)
 
-```bash
-printf '[{"date":"2024-07-01","city":"London","temperature":18}]' \
-  | python3 -c 'import json,sys; print(json.dumps({"properties":{},"routing_key":"weather-stream","payload":sys.stdin.read(),"payload_encoding":"string"}))' \
-  | curl -sS -u datapike:datapike \
-      -H "content-type:application/json" \
-      -X POST "http://localhost:15672/api/exchanges/%2F/amq.default/publish" \
-      -d @-
-```
+### Iceberg table
 
-The payload is a JSON array of `{date, city, temperature}` objects. Use a JSON array for multiple observations or a single-element array for one record. The pipeline auto-detects JSON, XML, CSV, and TSV formats.
-
-Run the full smoke test (publishes files and verifies Iceberg output):
-
-```bash
-./scripts/local-smoke-test.sh
-```
-
-Query Iceberg tables with Trino:
-
-```bash
-./scripts/local-trino-query.sh "SHOW TABLES IN iceberg.default"
-./scripts/local-trino-query.sh "SELECT * FROM iceberg.default.temperature_summary ORDER BY date LIMIT 20"
-```
-
-Open interactive Trino shell:
+The table is created automatically by `localaws-up.sh` on every run (idempotent). If you ever need to recreate it manually — for example after dropping it to reset local state — open a Trino shell:
 
 ```bash
 ./scripts/local-trino-shell.sh
 ```
 
-Collect service logs into timestamped files:
+Then run:
 
-```bash
-./scripts/local-logs.sh
+```sql
+-- Reset (optional — drops table and schema)
+DROP TABLE IF EXISTS iceberg.weather_db.temperature_summary;
+DROP SCHEMA IF EXISTS iceberg.weather_db;
+
+-- Create schema (required before table; location must match Flink's warehouse path)
+CREATE SCHEMA IF NOT EXISTS iceberg.weather_db
+WITH (location = 'file:///opt/flink/local-warehouse/weather_db');
+
+-- Create table
+CREATE TABLE IF NOT EXISTS iceberg.weather_db.temperature_summary (
+    yyyy_mm_dd  VARCHAR,
+    city_temps  MAP(VARCHAR, DOUBLE)
+)
+WITH (
+    format         = 'AVRO',
+    format_version = 2
+);
+
+-- Verify
+DESCRIBE iceberg.weather_db.temperature_summary;
 ```
 
-Stop local stack:
+> **Note:** The Flink job calls `ensureTableExists()` at startup (when the Sink writer initializes) and will fail fast if the table is absent. Always ensure the table exists before submitting the job.
+
+### Publish test data
+
+Upload a sample file to MiniStack S3 and put the S3 Object Created notification directly into Kinesis. The publish scripts handle both steps:
 
 ```bash
-./scripts/local-down.sh
+./scripts/localaws-publish-json.sh
+./scripts/localaws-publish-csv.sh
+./scripts/localaws-publish-xml.sh
+./scripts/localaws-publish-tsv.sh
 ```
 
-Stop and purge local data:
+Or use an arbitrary local file:
 
 ```bash
-./scripts/local-down.sh --purge
+./scripts/localaws-publish-file.sh /path/to/your/weather_data.json
 ```
+
+Alternatively, perform both steps manually:
+
+```bash
+# 1. Upload the file to MiniStack S3
+AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test \
+  aws --endpoint-url http://localhost:4566 --region us-east-1 \
+  s3 cp weather_data.json s3://data-pike-input/data/weather_data.json
+
+# 2. Put the S3 Object Created notification into Kinesis
+AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test \
+  aws --endpoint-url http://localhost:4566 --region us-east-1 \
+  kinesis put-record --stream-name weather-stream \
+  --partition-key data/weather_data.json \
+  --data "$(echo '{"source":"aws.s3","detail-type":"Object Created","detail":{"bucket":{"name":"data-pike-input"},"object":{"key":"data/weather_data.json"}}}' | base64 -w0)"
+```
+
+### Smoke test
+
+```bash
+./scripts/localaws-smoke-test.sh
+```
+
+Generates a unique payload, uploads it to MiniStack S3, and verifies that new Iceberg Avro files appear under `local-data/warehouse/` within 30 seconds.
+
+### Query results
+
+The same Trino query scripts work unchanged:
+
+```bash
+./scripts/local-trino-query.sh "SELECT * FROM iceberg.weather_db.temperature_summary ORDER BY yyyy_mm_dd LIMIT 20"
+./scripts/local-trino-shell.sh
+```
+
+Flink UI: <http://localhost:8081>  
+MiniStack console: <http://localhost:4566>  
+Trino UI: <http://localhost:8080>
+
+### Stop the stack
+
+```bash
+./scripts/localaws-down.sh
+./scripts/localaws-down.sh --purge  # also removes local-data/
+```
+
+### How it works
+
+```
+Production:
+  s3 cp → MiniStack S3 ──► EventBridge (automatic) ──► Kinesis ──► Flink
+
+LOCAL_AWS mode (MiniStack):
+  s3 cp → MiniStack S3                                             [needed by S3FileReader]
+  kinesis put-record ──────────────────────────────► Kinesis ──► Flink
+               ↑
+       publish script does this step manually
+```
+
+#### Why the publish scripts write to both S3 and Kinesis
+
+In production, uploading a file to S3 triggers **two independent downstream actions**:
+
+1. **S3 stores the file** — `S3FileReader` later fetches the raw bytes from S3 using the bucket name and object key carried in the Kinesis record.
+2. **S3 emits an `Object Created` event to EventBridge** — an EventBridge rule routes that event as a JSON record into the Kinesis stream, which is what Flink's `KinesisStreamsSource` actually reads. The record contains the bucket name and object key so the pipeline knows *what* to fetch.
+
+These two concerns are intentionally decoupled: the Kinesis record is just a lightweight notification, not the file itself.
+
+#### Why we bypass EventBridge in MiniStack
+
+MiniStack fully emulates the AWS **control-plane API** for EventBridge (you can `put-rule`, `put-targets`, etc. and get back successful responses), but it does **not execute EventBridge target routing** at runtime — it accepts the configuration but never actually fires the rule or delivers records to Kinesis when an S3 event occurs. We discovered this empirically: the S3 upload succeeded, the bucket notification config was set, the rule and Kinesis target were registered, but `kinesis get-records` returned an empty shard every time.
+
+Rather than work around this with a polling daemon or a Lambda shim, the publish scripts simply replicate the one step that MiniStack skips. After uploading to S3 they call `aws kinesis put-record` with the same `Object Created` JSON payload that EventBridge would have produced. Flink receives the identical record structure either way — the application code is completely unaware of how the record arrived in Kinesis.
+
+#### Why `S3Client` works without code changes
+
+`S3Client.create()` (AWS SDK v2) reads the `AWS_ENDPOINT_URL` environment variable automatically. The Flink containers have `AWS_ENDPOINT_URL=http://ministack:4566` injected via Docker Compose, so every `GetObject` call is silently redirected to MiniStack. The same JAR, with the same `S3FileReader` code, runs against real AWS in production and against MiniStack locally.
+
+Path-style S3 access (`/bucket/key` instead of `bucket.hostname/key`) is enabled in `S3FileReader.open()` whenever `AWS_ENDPOINT_URL` is set. This is required because MiniStack (like LocalStack and most S3-compatible emulators) cannot serve virtual-hosted-style subdomain requests — DNS inside the Docker network has no wildcard entry for `bucket.ministack`.
+
+#### Why Postgres runs as a separate container instead of using MiniStack RDS
+
+MiniStack includes an RDS service, so it is reasonable to ask why the stack has a dedicated Postgres container. There are two reasons:
+
+**MiniStack's RDS is a control-plane emulator, not a database engine.** It mimics the AWS RDS management API (`CreateDBInstance`, `DescribeDBInstances`, etc.) and returns successful responses, but it does not actually start or run a PostgreSQL process. There is no `jdbc:postgresql://ministack:5432/...` socket to connect to, so Iceberg's `JdbcCatalog` and Trino's JDBC metastore would have nothing to talk to.
+
+**The local Postgres container is a stand-in for Glue, not for RDS.** In production the pipeline uses `GlueCatalog` — RDS is not involved at all. Locally, `JdbcCatalog` backed by Postgres provides the same catalog contract that `GlueCatalog` provides in production. Keeping the same Postgres container in both `LOCAL` and `LOCAL_AWS` modes means only one catalog implementation needs to be maintained and tested. Introducing a second catalog path just for `LOCAL_AWS` would add complexity with no benefit.
 
 ## Infrastructure
 
@@ -207,7 +291,7 @@ src/main/java/org/muralis/datahose/
 ├── model/                            # Data models (S3Notification, WeatherObservation, etc.)
 ├── processing/                       # Format detection, parsers, S3 file reading, summarization
 ├── sink/                             # IcebergSink — writes to Iceberg via Glue catalog
-└── source/                           # KinesisMessageSource, RabbitMqStreamsSourceFunction
+└── source/                           # KinesisMessageSource
 
 terraform/
 ├── modules/

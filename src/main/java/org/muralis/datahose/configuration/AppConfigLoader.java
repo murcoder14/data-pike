@@ -45,25 +45,24 @@ public final class AppConfigLoader {
         Properties defaults = loadClasspathProperties(DEFAULT_PROPERTIES_FILE);
         ExecutionMode mode = resolveMode(args, defaults);
 
-        if (mode == ExecutionMode.LOCAL) {
-            return loadLocal(defaults);
+        if (mode == ExecutionMode.LOCAL_AWS) {
+            return loadLocalAws(defaults);
         }
         return loadCloud(args, defaults, globalParams);
     }
 
-    private static AppConfig loadLocal(Properties defaults) {
-        Properties local = merge(defaults, loadClasspathProperties("application-local.properties"));
+    private static AppConfig loadLocalAws(Properties defaults) {
+        Properties local = merge(defaults, loadClasspathProperties("application-localaws.properties"));
 
-        String host = getOptionalEnvOrProperty(local, "RABBITMQ_HOST", "rabbitmq.host", "localhost");
-        int port = Integer.parseInt(getOptionalEnvOrProperty(local, "RABBITMQ_PORT", "rabbitmq.port", "5552"));
-        String username = getOptionalEnvOrProperty(local, "RABBITMQ_USERNAME", "rabbitmq.username", "guest");
-        String password = getOptionalEnvOrProperty(local, "RABBITMQ_PASSWORD", "rabbitmq.password", "guest");
-        String virtualHost = getOptionalEnvOrProperty(local, "RABBITMQ_VHOST", "rabbitmq.virtual.host", "/");
-        String streamName = getRequiredEnvOrProperty(local, "RABBITMQ_STREAM_NAME", "rabbitmq.stream.name");
-        String consumerName = getOptionalEnvOrProperty(
-                local, "RABBITMQ_CONSUMER_NAME", "rabbitmq.consumer.name", "data-pike-local-consumer");
-        long pollTimeoutMs = Long.parseLong(getOptionalEnvOrProperty(
-                local, "RABBITMQ_POLL_TIMEOUT_MS", "rabbitmq.poll.timeout.ms", "1000"));
+        String endpointUrl = getOptionalEnvOrProperty(local,
+                "MINISTACK_ENDPOINT", "ministack.endpoint", "http://localhost:4566");
+        String streamArn = getOptionalEnvOrProperty(local,
+                "KINESIS_STREAM_ARN", "kinesis.stream.arn",
+                "arn:aws:kinesis:us-east-1:000000000000:stream/weather-stream");
+        String awsRegion = getOptionalEnvOrProperty(local,
+                "AWS_REGION", "kinesis.aws.region", "us-east-1");
+        String initialPosition = getOptionalEnvOrProperty(local,
+                "KINESIS_INITIAL_POSITION", "kinesis.initial.position", "TRIM_HORIZON");
 
         String warehousePath = getRequiredEnvOrProperty(local, "ICEBERG_WAREHOUSE_PATH", "iceberg.warehouse.path");
         String catalogName = getOptionalEnvOrProperty(local, "ICEBERG_CATALOG_NAME", "iceberg.catalog.name", "local_catalog");
@@ -76,16 +75,19 @@ public final class AppConfigLoader {
         String jdbcPassword = getOptionalEnvOrProperty(
                 local, "ICEBERG_JDBC_PASSWORD", "iceberg.jdbc.password", "iceberg_password");
 
-        AppConfig.RabbitMqConfig rabbitMqConfig = new AppConfig.RabbitMqConfig(
-                host, port, username, password, virtualHost, streamName, consumerName, pollTimeoutMs);
-
         AppConfig.KinesisConfig kinesisConfig = new AppConfig.KinesisConfig(
-                "", "", KinesisSourceConfigOptions.InitialPosition.LATEST);
+                streamArn,
+                awsRegion,
+                KinesisSourceConfigOptions.InitialPosition.valueOf(initialPosition.toUpperCase(Locale.ROOT)),
+                endpointUrl);
 
         IcebergSink.IcebergConfig icebergConfig = IcebergSink.IcebergConfig.localJdbc(
                 warehousePath, catalogName, tableName, jdbcUri, jdbcUser, jdbcPassword);
 
-        return new AppConfig(ExecutionMode.LOCAL, kinesisConfig, rabbitMqConfig, icebergConfig);
+        LOG.info("LOCAL_AWS mode: endpoint={}, stream={}, region={}, initialPosition={}",
+                endpointUrl, streamArn, awsRegion, initialPosition);
+
+        return new AppConfig(ExecutionMode.LOCAL_AWS, kinesisConfig, icebergConfig);
     }
 
     static AppConfig loadCloud(String[] args, Properties defaults) {
@@ -146,13 +148,10 @@ public final class AppConfigLoader {
                 awsRegion,
                 KinesisSourceConfigOptions.InitialPosition.valueOf(initialPosition.toUpperCase(Locale.ROOT)));
 
-        AppConfig.RabbitMqConfig rabbitMqConfig = new AppConfig.RabbitMqConfig(
-                "", 5552, "", "", "/", "", "", 1000L);
-
         IcebergSink.IcebergConfig icebergConfig = new IcebergSink.IcebergConfig(
                 warehousePath, catalogName, tableName);
 
-        return new AppConfig(ExecutionMode.CLOUD, kinesisConfig, rabbitMqConfig, icebergConfig);
+        return new AppConfig(ExecutionMode.CLOUD, kinesisConfig, icebergConfig);
     }
 
     /**

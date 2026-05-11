@@ -7,7 +7,6 @@ import org.apache.iceberg.CatalogUtil;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.DataFiles;
 import org.apache.iceberg.FileFormat;
-import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.hadoop.HadoopFileIO;
@@ -15,16 +14,13 @@ import org.apache.iceberg.aws.glue.GlueCatalog;
 import org.apache.iceberg.aws.s3.S3FileIO;
 import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.Namespace;
-import org.apache.iceberg.catalog.SupportsNamespaces;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.data.GenericAppenderFactory;
 import org.apache.iceberg.data.IcebergGenerics;
-import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.io.FileAppender;
 import org.apache.iceberg.io.OutputFile;
-import org.apache.iceberg.types.Types;
 import org.apache.iceberg.hadoop.HadoopCatalog;
 import org.jetbrains.annotations.NotNull;
 import org.muralis.datahose.model.ProcessedRecord;
@@ -161,7 +157,8 @@ public class IcebergSink implements Sink<ProcessedRecord> {
                 } catch (Exception e) {
                     if (e instanceof NoSuchTableException) {
                         throw new IOException("Iceberg table '" + config.tableName()
-                                + "' does not exist. Provision it via Terraform before starting the application.", e);
+                                + "' does not exist in catalog '" + config.catalogName()
+                                + "'. Create the table in the Glue catalog database before starting the application.", e);
                     }
                     lastException = e;
                     if (attempt < MAX_RETRIES - 1) {
@@ -316,6 +313,8 @@ public class IcebergSink implements Sink<ProcessedRecord> {
         DefaultIcebergTableWriter(IcebergConfig config) {
             this.config = config;
             this.catalog = createCatalog(config);
+            // Fail fast at startup when the configured table is missing.
+            ensureTableExists(parseIdentifier(config.tableName()));
         }
 
         @Override
@@ -325,7 +324,7 @@ public class IcebergSink implements Sink<ProcessedRecord> {
             }
 
             TableIdentifier identifier = parseIdentifier(tableName);
-            Table table = loadOrCreateTable(identifier);
+            Table table = loadExistingTable(identifier);
             List<GenericRecord> rowsToWrite = dedupeRowsIfLocal(table, rows);
 
             if (rowsToWrite.isEmpty()) {
@@ -369,13 +368,13 @@ public class IcebergSink implements Sink<ProcessedRecord> {
             Set<String> existingDates = new HashSet<>();
             try (CloseableIterable<org.apache.iceberg.data.Record> existingRows = IcebergGenerics.read(table).build()) {
                 for (org.apache.iceberg.data.Record existingRow : existingRows) {
-                    existingDates.add(String.valueOf(existingRow.getField("date")));
+                    existingDates.add(String.valueOf(existingRow.getField("yyyy_mm_dd")));
                 }
             }
 
             List<GenericRecord> filteredRows = new ArrayList<>();
             for (GenericRecord row : rows) {
-                String date = String.valueOf(row.get("date"));
+                String date = String.valueOf(row.get("yyyy_mm_dd"));
                 if (existingDates.add(date)) {
                     filteredRows.add(row);
                 }
@@ -419,33 +418,19 @@ public class IcebergSink implements Sink<ProcessedRecord> {
             return TableIdentifier.of(Namespace.of("default"), tableName);
         }
 
-        private Table loadOrCreateTable(TableIdentifier identifier) {
+        private Table loadExistingTable(TableIdentifier identifier) {
             try {
                 return catalog.loadTable(identifier);
             } catch (NoSuchTableException e) {
-                if (!JDBC_CATALOG_IMPL.equals(config.catalogImpl())) {
-                    throw e;
-                }
-
-                Schema schema = new Schema(
-                        Types.NestedField.required(1, "date", Types.StringType.get()),
-                        Types.NestedField.required(2, "max_temp", Types.IntegerType.get()),
-                        Types.NestedField.required(3, "max_temp_city", Types.StringType.get()),
-                        Types.NestedField.required(4, "min_temp", Types.IntegerType.get()),
-                        Types.NestedField.required(5, "min_temp_city", Types.StringType.get()));
-
-                if (catalog instanceof SupportsNamespaces namespaceCatalog) {
-                    try {
-                        namespaceCatalog.createNamespace(identifier.namespace());
-                    } catch (AlreadyExistsException ignored) {
-                        // Namespace already exists.
-                    }
-                }
-
-                LOG.info("Creating local Iceberg table '{}' in warehouse '{}'",
-                        identifier, config.warehousePath());
-                return catalog.createTable(identifier, schema, PartitionSpec.unpartitioned());
+                throw new NoSuchTableException(
+                        "Iceberg table '%s' does not exist in catalog '%s'.",
+                        identifier,
+                        config.catalogName());
             }
+        }
+
+        private void ensureTableExists(TableIdentifier identifier) {
+            loadExistingTable(identifier);
         }
 
         private org.apache.iceberg.data.Record toIcebergRecord(Schema schema, GenericRecord avroRecord) {

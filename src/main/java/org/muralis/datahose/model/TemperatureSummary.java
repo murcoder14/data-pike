@@ -6,6 +6,8 @@ import lombok.ToString;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 
 @Getter
@@ -14,19 +16,14 @@ import java.util.Objects;
 public class TemperatureSummary implements Serializable {
 
     @Serial
-    private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 2L;
 
-    private final String date;
-    private final int maxTemp;
-    private final String maxTempCity;
-    private final int minTemp;
-    private final String minTempCity;
+    private final String yyyyMmDd;
+    private final Map<String, Double> cityTemps;
 
-    public TemperatureSummary(String date, int maxTemp, String maxTempCity, int minTemp, String minTempCity) {
-        this.date = Objects.requireNonNull(date, "date must not be null");
-        this.maxTemp = maxTemp;
-        this.maxTempCity = Objects.requireNonNull(maxTempCity, "maxTempCity must not be null");
-        this.minTemp = minTemp;
-        this.minTempCity = Objects.requireNonNull(minTempCity, "minTempCity must not be null");
+    public TemperatureSummary(String yyyyMmDd, Map<String, Double> cityTemps) {
+        this.yyyyMmDd = Objects.requireNonNull(yyyyMmDd, "yyyyMmDd must not be null");
+        this.cityTemps = new LinkedHashMap<>(
+                Objects.requireNonNull(cityTemps, "cityTemps must not be null"));
     }
 }

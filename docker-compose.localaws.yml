@@ -1,22 +1,17 @@
 services:
-  rabbitmq:
-    image: ubuntu/rabbitmq:3.12-24.04_stable
-    container_name: data-pike-rabbitmq
-    hostname: rabbitmq
+  ministack:
+    image: ministackorg/ministack:latest
+    container_name: data-pike-ministack
+    hostname: ministack
     ports:
-      - "5672:5672"
-      - "5552:5552"
-      - "15672:15672"
+      - "4566:4566"
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-datapike}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-datapike}
-    volumes:
-      - ./rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      AWS_DEFAULT_REGION: us-east-1
     healthcheck:
-      test: ["CMD-SHELL", "rabbitmq-diagnostics ping || /usr/lib/rabbitmq/bin/rabbitmq-diagnostics ping"]
-      interval: 10s
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:4566/_ministack/health')\""]
+      interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
 
   postgres:
     image: postgres:16-bookworm
@@ -30,6 +25,7 @@ services:
       - "5433:5432"
     volumes:
       - ./local-data/postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-iceberg_user} -d ${POSTGRES_DB:-iceberg_catalog}"]
       interval: 10s
@@ -41,7 +37,7 @@ services:
     container_name: data-pike-flink-jobmanager
     hostname: jobmanager
     depends_on:
-      rabbitmq:
+      ministack:
         condition: service_healthy
       postgres:
         condition: service_healthy
@@ -49,15 +45,21 @@ services:
       - "8081:8081"
     command: jobmanager
     environment:
-      EXECUTION_MODE: local
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_PORT: "5552"
-      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-datapike}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-datapike}
-      RABBITMQ_STREAM_NAME: ${RABBITMQ_STREAM_NAME:-weather-stream}
+      EXECUTION_MODE: local_aws
+      # MiniStack endpoint — all AWS SDK calls inside the Flink JVM use this
+      AWS_ENDPOINT_URL: http://ministack:4566
+      MINISTACK_ENDPOINT: http://ministack:4566
+      # Dummy credentials required by AWS SDK — MiniStack accepts any value
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+      # Kinesis stream ARN (MiniStack uses account ID 000000000000)
+      KINESIS_STREAM_ARN: arn:aws:kinesis:us-east-1:000000000000:stream/weather-stream
+      KINESIS_INITIAL_POSITION: TRIM_HORIZON
+      # Iceberg — same JDBC catalog as LOCAL mode (backed by Postgres)
       ICEBERG_WAREHOUSE_PATH: file:///opt/flink/local-warehouse
       ICEBERG_CATALOG_NAME: local_catalog
-      ICEBERG_TABLE_NAME: default.temperature_summary
+      ICEBERG_TABLE_NAME: weather_db.temperature_summary
       ICEBERG_JDBC_URI: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-iceberg_catalog}
       ICEBERG_JDBC_USER: ${ICEBERG_JDBC_USER:-iceberg_user}
       ICEBERG_JDBC_PASSWORD: ${ICEBERG_JDBC_PASSWORD:-iceberg_password}
@@ -80,6 +82,10 @@ services:
       - jobmanager
     command: taskmanager
     environment:
+      AWS_ENDPOINT_URL: http://ministack:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
       FLINK_PROPERTIES: |
         jobmanager.rpc.address: jobmanager
         taskmanager.numberOfTaskSlots: 2

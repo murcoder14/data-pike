@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
@@ -54,7 +55,18 @@ public class S3FileReader extends RichFlatMapFunction<S3Notification, S3FileCont
     @Override
     public void open(OpenContext openContext) {
         if (this.s3Client == null) {
-            this.s3Client = S3Client.create();
+            String endpointUrl = System.getenv("AWS_ENDPOINT_URL");
+            if (endpointUrl != null && !endpointUrl.isBlank()) {
+                // Local emulators (MiniStack, LocalStack) require path-style access because
+                // they cannot serve virtual-hosted-style subdomains (e.g. bucket.ministack).
+                this.s3Client = S3Client.builder()
+                        .serviceConfiguration(S3Configuration.builder()
+                                .pathStyleAccessEnabled(true)
+                                .build())
+                        .build();
+            } else {
+                this.s3Client = S3Client.create();
+            }
         }
     }
 

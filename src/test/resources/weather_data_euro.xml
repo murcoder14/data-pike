@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<observations>
+  <observation>
+    <date>2020-07-15</date>
+    <city>London</city>
+    <temperature>75</temperature>
+  </observation>
+  <observation>
+    <date>2020-07-15</date>
+    <city>Amsterdam</city>
+    <temperature>81</temperature>
+  </observation>
+  <observation>
+    <date>2020-07-15</date>
+    <city>Bucharest</city>
+    <temperature>87</temperature>
+  </observation>
+  <observation>
+    <date>2022-07-15</date>
+    <city>Copenhagen</city>
+    <temperature>73</temperature>
+  </observation>
+  <observation>
+    <date>2022-07-15</date>
+    <city>Bratislava</city>
+    <temperature>82</temperature>
+  </observation>
+  <observation>
+    <date>2022-07-15</date>
+    <city>Milan</city>
+    <temperature>89</temperature>
+  </observation>
+  <observation>
+    <date>2022-07-15</date>
+    <city>Edinburgh</city>
+    <temperature>71</temperature>
+  </observation>
+</observations>
